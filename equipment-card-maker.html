@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Equipment Card Maker</title>
+<style>
+:root{--bg:#f4f1ea;--panel:#fff;--text:#1f1d1a;--muted:#6b665d;--line:#d8d2c4;--accent:#8a5a1c;--card:#fbf6e8;--cardtext:#2a2118;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171512;--panel:#221f1b;--text:#efe9dc;--muted:#a39b8b;--line:#3a352d;--accent:#d9a14e;--card:#2b261e;--cardtext:#f1e9d6}}
+:root[data-theme="dark"]{--bg:#171512;--panel:#221f1b;--text:#efe9dc;--muted:#a39b8b;--line:#3a352d;--accent:#d9a14e;--card:#2b261e;--cardtext:#f1e9d6}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 Georgia,"Times New Roman",serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.6rem;margin:0 0 4px}h2{font-size:1.2rem;margin:0 0 12px}
+.sub{color:var(--muted);margin:0 0 20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:24px}
+.maker{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
+@media(max-width:720px){.maker{grid-template-columns:1fr}.preview{order:-1}}
+label{display:block;font-size:.85rem;color:var(--muted);margin:12px 0 4px}
+input,select,textarea,button{font:inherit;color:var(--text)}
+input[type=text],input[type=search],input[type=number],select,textarea{width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+textarea{resize:vertical;min-height:80px}
+input[type=range]{width:100%}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--bg);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.count{font-size:.8rem;color:var(--muted);text-align:right}
+.msg{min-height:1.4em;font-size:.9rem;color:var(--accent);margin-top:8px}
+.hint{font-size:.8rem;color:var(--muted);margin-top:6px}
+/* card */
+.card{--tc:#777;width:100%;aspect-ratio:5/7;background:var(--card);color:var(--cardtext);border:6px solid var(--tc);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 6px 18px rgba(0,0,0,.25);overflow:hidden}
+.card[data-type="Armor"]{--tc:#5b7fa6}.card[data-type="Weapon"]{--tc:#b2412f}.card[data-type="Magic Item"]{--tc:#7b4fb0}
+.c-head{display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:2px solid var(--tc);padding-bottom:4px}
+.c-name{font-weight:700;font-size:1.05em;line-height:1.15;overflow-wrap:anywhere}
+.c-frame{position:relative;flex:0 0 46%;border:3px solid var(--tc);border-radius:8px;overflow:hidden;background:rgba(128,128,128,.18);touch-action:none}
+.c-frame.edit{cursor:grab}.c-frame.edit:active{cursor:grabbing}
+.c-frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;transform-origin:center;user-select:none;-webkit-user-drag:none;pointer-events:none}
+.c-ph{position:absolute;inset:0;display:grid;place-items:center;font-size:.8em;opacity:.6;text-align:center;padding:8px}
+.c-type{align-self:flex-start;background:var(--tc);color:#fff;font-size:.7em;letter-spacing:.08em;text-transform:uppercase;padding:2px 10px;border-radius:99px}
+.c-desc{flex:1;border:1px solid var(--tc);border-radius:8px;padding:6px 8px;font-size:.8em;line-height:1.35;overflow:hidden;overflow-wrap:anywhere}
+.c-text{font-style:italic}.c-desc div+.c-text{margin-top:.35em}
+.preview .card{font-size:16px}
+/* library */
+.filters{display:grid;grid-template-columns:1fr 180px;gap:10px;margin-bottom:16px}
+@media(max-width:520px){.filters{grid-template-columns:1fr}}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+.grid .card{font-size:11px;padding:6px;border-width:4px}
+.item .row{margin-top:8px}.item button{padding:4px 10px;font-size:.85rem}
+.empty{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Equipment Card Maker</h1>
+  <p class="sub">Build a trading card, tweak the photo right on the card, and save it to your browser’s library.</p>
+
+  <section class="panel">
+    <h2>Card Maker</h2>
+    <div class="maker">
+      <div class="controls">
+        <label for="photo">Equipment photo</label>
+        <input id="photo" type="file" accept="image/*">
+        <label for="name">Equipment name</label>
+        <input id="name" type="text" maxlength="40" placeholder="e.g. Dawnbreaker Longsword">
+        <label for="type">Equipment type</label>
+        <select id="type"><option>Armor</option><option selected>Weapon</option><option>Magic Item</option></select>
+        <label for="stat" id="statlabel">Damage</label>
+        <input id="stat" type="text" maxlength="160" placeholder="Optional">
+        <label for="use">Use Cooldown (turns)</label>
+        <input id="use" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
+        <label for="unequip">Unequip Cooldown (turns)</label>
+        <input id="unequip" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
+        <label for="cost">Etching Cost (trace)</label>
+        <input id="cost" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
+        <label for="etch">Etching</label>
+        <input id="etch" type="text" maxlength="160" placeholder="Optional short description">
+        <label for="desc">Description</label>
+        <textarea id="desc" maxlength="160" placeholder="A blade that glows at first light."></textarea>
+        <div class="count"><span id="dc">0</span>/160</div>
+        <div class="row">
+          <button id="reset" type="button">Reset photo</button>
+          <button id="save" type="button" class="primary">Save card</button>
+          <button id="new" type="button">New card</button>
+          <button id="copy" type="button">Copy JSON</button>
+          <button id="png" type="button">Export PNG</button>
+        </div>
+        <div class="msg" id="msg" role="status"></div>
+      </div>
+      <div class="preview">
+        <div id="live"></div>
+        <label for="zoom">Photo zoom</label>
+        <input id="zoom" type="range" min="0.5" max="4" step="0.01" value="1">
+        <div class="hint">The whole photo is shown at first. Zoom in to crop, drag the photo on the card to reposition, or scroll over it to zoom.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Search Previously Made Cards</h2>
+    <div class="filters">
+      <input id="q" type="search" placeholder="Search by name or description">
+      <select id="ft"><option value="">All types</option><option>Armor</option><option>Weapon</option><option>Magic Item</option></select>
+    </div>
+    <div id="lib" class="grid"></div>
+    <div class="msg" id="libmsg" role="status"></div>
+  </section>
+</main>
+
+<script>
+const KEY = 'equipmentCards.v1';
+const $ = id => document.getElementById(id);
+let state = blank();
+
+function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',use:'',unequip:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0}; }
+
+const STAT_LABEL = {Weapon:'Damage', Armor:'Defense', 'Magic Item':'Effect'};
+// Lines shown at the top of the description box; empty fields are skipped.
+function lineList(d){
+  const v = s => (s == null ? '' : String(s)).trim(), L = [];
+  const turns = n => n + (n === '1' ? ' turn' : ' turns');
+  if (v(d.stat)) L.push(STAT_LABEL[d.type] + ': ' + v(d.stat));
+  if (v(d.use)) L.push('Use Cooldown: ' + turns(v(d.use)));
+  if (v(d.unequip)) L.push('Unequip Cooldown: ' + turns(v(d.unequip)));
+  if (v(d.cost)) L.push('Etching Cost: ' + v(d.cost) + ' trace');
+  if (v(d.etch)) L.push('Etching: ' + v(d.etch));
+  return L;
+}
+// Shrink the description text until it fits inside its box.
+function fitDesc(root){
+  root.querySelectorAll('.c-desc').forEach(el => {
+    let k = 1; el.style.fontSize = '';
+    while (el.scrollHeight > el.clientHeight + 1 && k > 0.5){ k -= 0.05; el.style.fontSize = (0.8*k) + 'em'; }
+  });
+}
+
+/* ---------- storage ---------- */
+function loadAll(){
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch(e){ return []; }
+}
+function saveAll(list){
+  try { localStorage.setItem(KEY, JSON.stringify(list)); return true; }
+  catch(e){ return false; }
+}
+
+/* ---------- card rendering (shared by preview + library) ---------- */
+function buildCard(d, editable){
+  const c = document.createElement('div');
+  c.className = 'card'; c.dataset.type = d.type;
+  const head = document.createElement('div'); head.className = 'c-head';
+  const nm = document.createElement('div'); nm.className = 'c-name';
+  nm.textContent = d.name || 'Unnamed Equipment';
+  head.appendChild(nm);
+  const frame = document.createElement('div');
+  frame.className = 'c-frame' + (editable ? ' edit' : '');
+  if (d.image){
+    const img = document.createElement('img');
+    img.src = d.image; img.alt = '';
+    img.style.transform = `translate(${d.x*100}%,${d.y*100}%) scale(${d.zoom})`;
+    frame.appendChild(img);
+  } else {
+    const ph = document.createElement('div'); ph.className = 'c-ph';
+    ph.textContent = 'Upload a photo'; frame.appendChild(ph);
+  }
+  const ty = document.createElement('div'); ty.className = 'c-type'; ty.textContent = d.type;
+  const ds = document.createElement('div'); ds.className = 'c-desc';
+  const ls = lineList(d), txt = (d.desc || '').trim();
+  ls.forEach(t => { const r = document.createElement('div'); r.textContent = t; ds.appendChild(r); });
+  if (txt || !ls.length){ const p = document.createElement('div'); p.className = 'c-text'; p.textContent = txt || 'Description goes here.'; ds.appendChild(p); }
+  c.append(head, frame, ty, ds);
+  if (editable) attachDrag(frame);
+  return c;
+}
+
+function renderLive(){
+  const host = $('live'); host.replaceChildren(buildCard(state, true)); fitDesc(host);
+}
+
+/* ---------- photo editing on the card ---------- */
+function attachDrag(frame){
+  let drag = null;
+  frame.addEventListener('pointerdown', e => {
+    if (!state.image) return;
+    frame.setPointerCapture(e.pointerId);
+    drag = {px:e.clientX, py:e.clientY, x:state.x, y:state.y, w:frame.clientWidth, h:frame.clientHeight};
+  });
+  frame.addEventListener('pointermove', e => {
+    if (!drag) return;
+    state.x = clampPan(drag.x + (e.clientX-drag.px)/drag.w);
+    state.y = clampPan(drag.y + (e.clientY-drag.py)/drag.h);
+    applyTransform(frame);
+  });
+  const end = () => { drag = null; };
+  frame.addEventListener('pointerup', end);
+  frame.addEventListener('pointercancel', end);
+  frame.addEventListener('wheel', e => {
+    if (!state.image) return;
+    e.preventDefault();
+    setZoom(state.zoom + (e.deltaY < 0 ? 0.08 : -0.08));
+  }, {passive:false});
+}
+function clampPan(v){ return Math.max(-1, Math.min(1, v)); }
+function applyTransform(frame){
+  const img = frame.querySelector('img');
+  if (img) img.style.transform = `translate(${state.x*100}%,${state.y*100}%) scale(${state.zoom})`;
+}
+function setZoom(z){
+  state.zoom = Math.max(0.5, Math.min(4, z));
+  $('zoom').value = state.zoom;
+  const f = $('live').querySelector('.c-frame'); if (f) applyTransform(f);
+}
+
+/* ---------- inputs ---------- */
+$('photo').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const im = new Image();
+    im.onload = () => {
+      // downscale so saved cards stay small enough for localStorage
+      const max = 800, s = Math.min(1, max/Math.max(im.width, im.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(im.width*s); cv.height = Math.round(im.height*s);
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+      state.image = cv.toDataURL('image/jpeg', 0.8);
+      state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1;
+      renderLive();
+    };
+    im.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+$('name').addEventListener('input', e => { state.name = e.target.value; renderLive(); });
+$('type').addEventListener('change', e => { state.type = e.target.value; $('statlabel').textContent = STAT_LABEL[state.type]; renderLive(); });
+['stat','use','unequip','cost','etch'].forEach(k => $(k).addEventListener('input', e => { state[k] = e.target.value; renderLive(); }));
+$('desc').addEventListener('input', e => { state.desc = e.target.value; $('dc').textContent = state.desc.length; renderLive(); });
+$('zoom').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
+$('reset').addEventListener('click', () => { state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1; renderLive(); });
+
+function syncForm(){
+  $('name').value = state.name; $('type').value = state.type; $('desc').value = state.desc;
+  $('dc').textContent = state.desc.length; $('zoom').value = state.zoom; $('photo').value = '';
+  ['stat','use','unequip','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
+  $('statlabel').textContent = STAT_LABEL[state.type];
+  renderLive();
+}
+function say(t, id='msg'){ $(id).textContent = t; }
+
+$('new').addEventListener('click', () => { state = blank(); syncForm(); say(''); });
+
+$('save').addEventListener('click', () => {
+  if (!state.name.trim()) { say('Give the card a name first.'); return; }
+  const list = loadAll();
+  const rec = {...state, name: state.name.trim(), id: state.id || String(Date.now()), updated: new Date().toISOString()};
+  const i = list.findIndex(c => c.id === rec.id);
+  if (i >= 0) list[i] = rec; else list.unshift(rec);
+  if (!saveAll(list)) { say('Browser storage is full or unavailable. Try a smaller photo or delete old cards.'); return; }
+  state.id = rec.id;
+  say('Saved “' + rec.name + '” to your library.');
+  renderLib();
+});
+
+$('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(JSON.stringify(state)); say('Card JSON copied.'); }
+  catch(e){ say('Copy isn’t available here.'); }
+});
+
+/* ---------- PNG export (drawn on a canvas, 750x1050) ---------- */
+const COLORS = {Armor:'#5b7fa6', Weapon:'#b2412f', 'Magic Item':'#7b4fb0'};
+function rr(g,x,y,w,h,r){
+  g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath();
+}
+function wrapText(g,text,maxW){
+  const lines=[]; let cur='';
+  for (let w of text.split(/\s+/).filter(Boolean)){
+    while (g.measureText(w).width > maxW){            // break very long words
+      let n=w.length; while (n>1 && g.measureText(w.slice(0,n)).width > maxW) n--;
+      if (cur){ lines.push(cur); cur=''; }
+      lines.push(w.slice(0,n)); w=w.slice(n);
+    }
+    const t = cur ? cur+' '+w : w;
+    if (g.measureText(t).width > maxW && cur){ lines.push(cur); cur=w; } else cur=t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function loadImg(src){ return new Promise((ok,no)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=no; i.src=src; }); }
+
+async function cardBlob(d){
+  const W=750, H=1050, tc=COLORS[d.type]||'#777';
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const g=cv.getContext('2d'); g.textBaseline='top';
+  rr(g,0,0,W,H,48); g.fillStyle=tc; g.fill();
+  rr(g,15,15,W-30,H-30,36); g.fillStyle='#fbf6e8'; g.fill();
+  // name
+  g.fillStyle='#2a2118'; g.font='bold 46px Georgia, serif';
+  const nl = wrapText(g,d.name||'Unnamed Equipment',670).slice(0,2);
+  nl.forEach((l,i)=>g.fillText(l,40,45+i*52));
+  const ul = 45 + nl.length*52 + 8;   // underline sits right under the name
+  g.fillStyle=tc; g.fillRect(40,ul,670,5);
+  // photo frame (fit inside, then pan + zoom, same as the live card)
+  const fx=40, fy=ul+25, fw=670, fh=440;
+  rr(g,fx,fy,fw,fh,14); g.fillStyle='rgba(128,128,128,.18)'; g.fill();
+  if (d.image){
+    const im=await loadImg(d.image);
+    g.save(); rr(g,fx,fy,fw,fh,14); g.clip();
+    const s=Math.min(fw/im.width, fh/im.height);
+    g.translate(fx+fw/2+d.x*fw, fy+fh/2+d.y*fh); g.scale(d.zoom,d.zoom);
+    g.drawImage(im,-im.width*s/2,-im.height*s/2,im.width*s,im.height*s);
+    g.restore();
+  }
+  rr(g,fx,fy,fw,fh,14); g.strokeStyle=tc; g.lineWidth=8; g.stroke();
+  // type badge
+  g.font='24px Georgia, serif';
+  const label=d.type.toUpperCase().split('').join('\u200A');
+  const pw=g.measureText(label).width+44;
+  const py = fy+fh+25;
+  rr(g,40,py,pw,44,22); g.fillStyle=tc; g.fill();
+  g.fillStyle='#fff'; g.fillText(label,62,py+10);
+  // description
+  const by = py+44+21, bh = 1010-by;
+  rr(g,40,by,670,bh,16); g.strokeStyle=tc; g.lineWidth=3; g.stroke();
+  const items = lineList(d).map(t=>({t, f:''}));
+  if ((d.desc||'').trim()) items.push({t:d.desc.trim(), f:'italic '});
+  if (!items.length) items.push({t:'Description goes here.', f:'italic '});
+  let laid = [];
+  for (let size=32; size>=14; size-=2){
+    laid = []; let y = 0;
+    items.forEach((it,k)=>{
+      g.font = it.f + size + 'px Georgia, serif';
+      if (it.f && k>0) y += 8;
+      wrapText(g,it.t,630).forEach(l=>{ laid.push({l, f:g.font, y}); y += Math.round(size*1.35); });
+    });
+    if (y <= bh-40) break;
+  }
+  g.fillStyle='#2a2118';
+  laid.forEach(o=>{ g.font=o.f; g.fillText(o.l,60,by+20+o.y); });
+  return new Promise(r=>cv.toBlob(r,'image/png'));
+}
+
+async function exportPng(d, msgId){
+  const slug=(d.name||'equipment-card').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'equipment-card';
+  try {
+    const blob = await cardBlob(d);
+    // Inside Claude the viewer provides the save dialog; anywhere else use a normal browser download.
+    const dl = window.claude ? await window.claude.use('downloads') : null;
+    if (dl){
+      await dl.save({filename: slug+'.png', data: blob});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = slug+'.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    say('PNG ready.', msgId);
+  } catch(e){
+    say(e && e.code==='declined' ? 'Download cancelled.' : 'Couldn’t export the PNG.', msgId);
+  }
+}
+$('png').addEventListener('click', () => exportPng(state, 'msg'));
+
+/* ---------- library: search + filter ---------- */
+function renderLib(){
+  const q = $('q').value.trim().toLowerCase(), t = $('ft').value;
+  const hits = loadAll().filter(c =>
+    (!t || c.type === t) &&
+    (!q || (c.name + ' ' + c.desc).toLowerCase().includes(q)));
+  const lib = $('lib'); lib.replaceChildren();
+  if (!hits.length){
+    const p = document.createElement('p'); p.className = 'empty';
+    p.textContent = loadAll().length ? 'No cards match your search.' : 'No saved cards yet.';
+    lib.appendChild(p); return;
+  }
+  hits.forEach(c => {
+    const item = document.createElement('div'); item.className = 'item';
+    item.appendChild(buildCard(c, false));
+    const row = document.createElement('div'); row.className = 'row';
+    const ed = document.createElement('button'); ed.textContent = 'Edit';
+    ed.onclick = () => { state = {...c}; syncForm(); say('Editing “' + c.name + '”.'); window.scrollTo({top:0, behavior:'smooth'}); };
+    const del = document.createElement('button'); del.textContent = 'Delete';
+    del.onclick = () => { saveAll(loadAll().filter(x => x.id !== c.id)); renderLib(); };
+    const pg = document.createElement('button'); pg.textContent = 'PNG';
+    pg.onclick = () => exportPng(c, 'libmsg');
+    row.append(ed, pg, del); item.appendChild(row); lib.appendChild(item); fitDesc(item);
+  });
+}
+$('q').addEventListener('input', renderLib);
+$('ft').addEventListener('change', renderLib);
+
+syncForm(); renderLib();
+</script>
+</body>
+</html>
