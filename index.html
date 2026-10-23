@@ -50,6 +50,12 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .grid .card{font-size:11px;padding:6px;border-width:4px}
 .item .row{margin-top:8px}.item button{padding:4px 10px;font-size:.85rem}
 .empty{color:var(--muted)}
+.tabs{display:flex;gap:6px;margin-bottom:12px}.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.fbox{border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.fbox .row{margin-top:8px}.fbox button{padding:2px 10px}
+input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -59,12 +65,14 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 
   <section class="panel">
     <h2>Card Maker</h2>
+    <div class="tabs"><button id="tab-orig" type="button" class="on">Original</button><button id="tab-cust" type="button">Custom</button></div>
     <div class="maker">
       <div class="controls">
         <label for="photo">Equipment photo</label>
         <input id="photo" type="file" accept="image/*">
         <label for="name">Equipment name</label>
         <input id="name" type="text" maxlength="40" placeholder="e.g. Dawnbreaker Longsword">
+        <div id="orig-fields">
         <label for="type">Equipment type</label>
         <select id="type"><option>Armor</option><option selected>Weapon</option><option>Magic Item</option></select>
         <label for="stat" id="statlabel">Damage</label>
@@ -79,6 +87,14 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
         <input id="cost" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
         <label for="etch">Etching</label>
         <input id="etch" type="text" maxlength="160" placeholder="Optional short description">
+        </div>
+        <div id="cust-fields" hidden>
+          <label for="ctype">Equipment type</label>
+          <input id="ctype" type="text" maxlength="24" placeholder="e.g. Potion, Vehicle, Relic">
+          <label>Custom fields</label>
+          <div id="fieldlist"></div>
+          <div class="row"><button id="addfield" type="button">+ Add field</button></div>
+        </div>
         <label for="desc">Description</label>
         <textarea id="desc" maxlength="160" placeholder="A blade that glows at first light."></textarea>
         <div class="count"><span id="dc">0</span>/160</div>
@@ -94,6 +110,10 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
       <div class="preview">
         <div id="live"></div>
         <button id="corners" type="button">Corners: Rounded</button>
+        <div id="colors" hidden>
+          <label for="cborder">Border color</label><input id="cborder" type="color">
+          <label for="cbg">Background color</label><input id="cbg" type="color">
+        </div>
         <label for="zoom">Photo zoom</label>
         <input id="zoom" type="range" min="0.5" max="4" step="0.01" value="1">
         <div class="hint">The whole photo is shown at first. Zoom in to crop, drag the photo on the card to reposition, or scroll over it to zoom.</div>
@@ -107,7 +127,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
     <h2>Search Previously Made Cards</h2>
     <div class="filters">
       <input id="q" type="search" placeholder="Search by name or description">
-      <select id="ft"><option value="">All types</option><option>Armor</option><option>Weapon</option><option>Magic Item</option></select>
+      <select id="ft"><option value="">All types</option><option>Armor</option><option>Weapon</option><option>Magic Item</option><option>Custom</option></select>
     </div>
     <div id="lib" class="grid"></div>
     <div class="msg" id="libmsg" role="status"></div>
@@ -118,7 +138,27 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 const KEY = 'equipmentCards.v1';
 const $ = id => document.getElementById(id);
 let state = blank();
+let mode = 'original';
+const stash = {original:null, custom:null};   // unsaved work kept per tab
 
+const MAX_FIELDS = 8;
+function blankCustom(){ return {kind:'custom',id:null,name:'',typeName:'',desc:'',fields:[],image:'',zoom:1,x:0,y:0,corners:'rounded',border:'#5b6b7a',bg:'#fbf6e8'}; }
+function textOn(hex){   // readable text color for a background
+  const n = parseInt(String(hex).slice(1), 16) || 0, r = n>>16&255, g = n>>8&255, b = n&255;
+  return (0.299*r + 0.587*g + 0.114*b) > 150 ? '#2a2118' : '#f5efe0';
+}
+function intText(v){ const n = parseInt(v, 10); return Number.isFinite(n) ? String(n) : ''; }
+function customLines(d){   // "Label: value unit", empty values skipped
+  return (d.fields || []).map(f => {
+    const val = String(f.value == null ? '' : f.value).trim(); if (!val) return null;
+    const lab = String(f.label || '').trim(), unit = String(f.unit || '').trim();
+    return (lab ? lab + ': ' : '') + val + (unit ? ' ' + unit : '');
+  }).filter(Boolean);
+}
+function searchText(c){
+  const extra = c.kind === 'custom' ? [c.typeName, ...(c.fields || []).flatMap(f => [f.label, f.value, f.unit])] : [];
+  return [c.name, c.desc, ...extra].join(' ').toLowerCase();
+}
 function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',range:'',use:'',unequip:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,corners:'rounded'}; }
 
 const RANGE_OPTIONS = ['Short', 'Medium', 'Long', 'Remote'];
@@ -135,6 +175,7 @@ const STAT_LABEL = {Weapon:'Damage', Armor:'Defense', 'Magic Item':'Effect'};
 // Lines shown at the top of the description box; empty fields are skipped.
 function lineList(d){
   const v = s => (s == null ? '' : String(s)).trim(), L = [];
+  if (d.kind === 'custom') return customLines(d);
   const turns = n => n + (n === '1' ? ' turn' : ' turns');
   if (v(d.stat)) L.push(STAT_LABEL[d.type] + ': ' + v(d.stat));
   if (v(d.range)) L.push('Range: ' + v(d.range));
@@ -164,7 +205,8 @@ function saveAll(list){
 /* ---------- card rendering (shared by preview + library) ---------- */
 function buildCard(d, editable){
   const c = document.createElement('div');
-  c.className = 'card'; c.dataset.type = d.type;
+  c.className = 'card'; c.dataset.type = d.kind === 'custom' ? 'Custom' : d.type;
+  if (d.kind === 'custom'){ c.style.setProperty('--tc', d.border); c.style.background = d.bg; c.style.color = textOn(d.bg); }
   c.dataset.corners = d.corners === 'sharp' ? 'sharp' : 'rounded';   // missing = rounded (older cards)
   const head = document.createElement('div'); head.className = 'c-head';
   const nm = document.createElement('div'); nm.className = 'c-name';
@@ -181,7 +223,8 @@ function buildCard(d, editable){
     const ph = document.createElement('div'); ph.className = 'c-ph';
     ph.textContent = 'Upload a photo'; frame.appendChild(ph);
   }
-  const ty = document.createElement('div'); ty.className = 'c-type'; ty.textContent = d.type;
+  const ty = document.createElement('div'); ty.className = 'c-type'; ty.textContent = d.kind === 'custom' ? (d.typeName || 'Custom') : d.type;
+  if (d.kind === 'custom') ty.style.color = textOn(d.border);
   const ds = document.createElement('div'); ds.className = 'c-desc';
   const ls = lineList(d), txt = (d.desc || '').trim();
   ls.forEach(t => { const r = document.createElement('div'); r.textContent = t; ds.appendChild(r); });
@@ -232,10 +275,40 @@ function setZoom(z){
 /* ---------- import JSON ---------- */
 const FIELD_LIMITS = {name:40, desc:160, stat:160, use:10, unequip:10, cost:10, etch:60};
 
+function applyShared(raw, card){   // photo, framing and corners: same rules for both kinds
+  const ranges = {zoom: [0.5, 4], x: [-1, 1], y: [-1, 1]};
+  for (const [k, [lo, hi]] of Object.entries(ranges)){
+    if (raw[k] === undefined) continue;
+    if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k])) return '"' + k + '" must be a number.';
+    card[k] = Math.min(hi, Math.max(lo, raw[k]));
+  }
+  if (raw.image){
+    if (typeof raw.image !== 'string' || !raw.image.startsWith('data:image/')) return '"image" must be an image data URL or empty.';
+    card.image = raw.image;
+  }
+  card.corners = raw.corners === 'sharp' ? 'sharp' : 'rounded';
+  return null;
+}
+function checkCustom(raw){
+  const card = blankCustom();
+  const txt = (v, max) => (typeof v === 'string' || typeof v === 'number') ? String(v).slice(0, max) : '';
+  const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) ? v : null;
+  card.name = txt(raw.name, 40); card.typeName = txt(raw.typeName, 24); card.desc = txt(raw.desc, 160);
+  card.border = hex(raw.border) || card.border; card.bg = hex(raw.bg) || card.bg;
+  if (raw.fields !== undefined && !Array.isArray(raw.fields)) return {error: '"fields" must be a list.'};
+  for (const f of (raw.fields || []).slice(0, MAX_FIELDS)){
+    if (!f || typeof f !== 'object') return {error: 'Each field must be an object.'};
+    const kind = f.kind === 'int' ? 'int' : 'text';
+    card.fields.push({label: txt(f.label, 24), kind, unit: txt(f.unit, 12), value: kind === 'int' ? intText(f.value) : txt(f.value, 60)});
+  }
+  const err = applyShared(raw, card); if (err) return {error: err};
+  return {card};
+}
 function checkImport(raw){
   // Must be one plain object (rejects null, numbers, strings, true/false, arrays)
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
     return {error: 'The JSON must be a single card object.'};
+  if (raw.kind === 'custom') return checkCustom(raw);
 
   const card = blank();   // known fields only, with defaults; id stays null
 
@@ -253,21 +326,7 @@ function checkImport(raw){
     card[k] = String(v).slice(0, max);
   }
 
-  // Number fields: optional, must be real numbers, clamped to the editor's ranges
-  const ranges = {zoom: [0.5, 4], x: [-1, 1], y: [-1, 1]};
-  for (const [k, [lo, hi]] of Object.entries(ranges)){
-    if (raw[k] === undefined) continue;
-    if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k]))
-      return {error: `"${k}" must be a number.`};
-    card[k] = Math.min(hi, Math.max(lo, raw[k]));
-  }
-
-  // Image: optional, but if present it must be an image data URL
-  if (raw.image){
-    if (typeof raw.image !== 'string' || !raw.image.startsWith('data:image/'))
-      return {error: '"image" must be an image data URL or empty.'};
-    card.image = raw.image;
-  }
+  const err = applyShared(raw, card); if (err) return {error: err};
   card.range = RANGE_OPTIONS.includes(raw.range) ? raw.range : '';
   return {card};
 }
@@ -284,7 +343,7 @@ $('import').addEventListener('click', () => {
   const {card, error} = checkImport(raw);
   if (error){ say(error); return; }
 
-  state = card;                       // id is null, so the first Save creates a new card
+  stash[mode] = state; state = card;                       // id is null, so the first Save creates a new card
   syncForm();                         // also re-renders the live card
   $('import-item-json').value = '';
   say('Card imported. Save it to add it to your library.');
@@ -323,16 +382,65 @@ $('corners').addEventListener('click', () => {
 });
 
 function syncForm(){
-  $('name').value = state.name; $('type').value = state.type; $('desc').value = state.desc;
+  const cu = state.kind === 'custom';
+  mode = cu ? 'custom' : 'original';
+  $('tab-orig').classList.toggle('on', !cu); $('tab-cust').classList.toggle('on', cu);
+  $('orig-fields').hidden = cu; $('cust-fields').hidden = !cu; $('colors').hidden = !cu;
+  $('name').value = state.name; $('desc').value = state.desc;
   $('dc').textContent = state.desc.length; $('zoom').value = state.zoom; $('photo').value = '';
-  ['stat','range','use','unequip','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
+  if (cu){
+    $('ctype').value = state.typeName; $('cborder').value = state.border; $('cbg').value = state.bg; renderFields();
+  } else {
+    $('type').value = state.type;
+    ['stat','range','use','unequip','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
+    $('statlabel').textContent = STAT_LABEL[state.type];
+  }
   updateCornersBtn();
-  $('statlabel').textContent = STAT_LABEL[state.type];
   renderLive();
 }
+function mk(tag, props, evt, fn){ const e = document.createElement(tag); Object.assign(e, props); if (evt) e.addEventListener(evt, fn); return e; }
+function renderFields(){
+  const box = $('fieldlist'); box.replaceChildren();
+  state.fields.forEach((f, i) => {
+    const row = mk('div', {className:'fbox'}), g = mk('div', {className:'frow'}), bar = mk('div', {className:'row'});
+    const typeSel = mk('select', {}, 'change', e => {
+      f.kind = e.target.value; if (f.kind === 'int') f.value = intText(f.value);
+      renderFields(); renderLive();
+    });
+    typeSel.append(new Option('Text', 'text'), new Option('Whole number', 'int')); typeSel.value = f.kind;
+    g.append(
+      mk('input', {type:'text', placeholder:'Label', value:f.label, maxLength:24}, 'input', e => { f.label = e.target.value; renderLive(); }),
+      typeSel,
+      mk('input', {type:'text', placeholder:'Unit (optional)', value:f.unit, maxLength:12}, 'input', e => { f.unit = e.target.value; renderLive(); }),
+      mk('input', {type: f.kind === 'int' ? 'number' : 'text', step:1, placeholder:'Value', value:f.value, maxLength:60}, 'input',
+         e => { f.value = f.kind === 'int' ? intText(e.target.value) : e.target.value; renderLive(); }));
+    bar.append(
+      mk('button', {type:'button', textContent:'\u2191', disabled:i === 0}, 'click', () => moveField(i, -1)),
+      mk('button', {type:'button', textContent:'\u2193', disabled:i === state.fields.length - 1}, 'click', () => moveField(i, 1)),
+      mk('button', {type:'button', textContent:'Remove'}, 'click', () => { state.fields.splice(i, 1); renderFields(); renderLive(); }));
+    row.append(g, bar); box.appendChild(row);
+  });
+}
+function moveField(i, d){ const a = state.fields, j = i + d; [a[i], a[j]] = [a[j], a[i]]; renderFields(); renderLive(); }
+$('ctype').addEventListener('input', e => { state.typeName = e.target.value; renderLive(); });
+$('cborder').addEventListener('input', e => { state.border = e.target.value; renderLive(); });
+$('cbg').addEventListener('input', e => { state.bg = e.target.value; renderLive(); });
+$('addfield').addEventListener('click', () => {
+  if (state.fields.length >= MAX_FIELDS){ say('Custom cards allow up to ' + MAX_FIELDS + ' fields.'); return; }
+  state.fields.push({label:'', kind:'text', unit:'', value:''}); renderFields(); renderLive();
+});
+function switchMode(m){
+  if (m === mode) return;
+  stash[mode] = state;
+  state = stash[m] || (m === 'custom' ? blankCustom() : blank());
+  syncForm(); say('');
+}
+$('tab-orig').addEventListener('click', () => switchMode('original'));
+$('tab-cust').addEventListener('click', () => switchMode('custom'));
+function openCard(c){ stash[mode] = state; state = JSON.parse(JSON.stringify(c)); syncForm(); }
 function say(t, id='msg'){ $(id).textContent = t; }
 
-$('new').addEventListener('click', () => { state = blank(); syncForm(); say(''); });
+$('new').addEventListener('click', () => { state = mode === 'custom' ? blankCustom() : blank(); syncForm(); say(''); });
 
 $('save').addEventListener('click', () => {
   if (!state.name.trim()) { say('Give the card a name first.'); return; }
@@ -374,14 +482,16 @@ function wrapText(g,text,maxW){
 function loadImg(src){ return new Promise((ok,no)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=no; i.src=src; }); }
 
 async function cardBlob(d){
-  const W=750, H=1050, tc=COLORS[d.type]||'#777';
+  const cu = d.kind === 'custom';
+  const W=750, H=1050, tc = cu ? d.border : (COLORS[d.type]||'#777');
+  const face = cu ? d.bg : '#fbf6e8', ink = cu ? textOn(d.bg) : '#2a2118';
   const R = r => d.corners === 'sharp' ? 0 : r;   // corner radius, zero when sharp
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
   const g=cv.getContext('2d'); g.textBaseline='top';
   rr(g,0,0,W,H,R(48)); g.fillStyle=tc; g.fill();
-  rr(g,15,15,W-30,H-30,R(36)); g.fillStyle='#fbf6e8'; g.fill();
+  rr(g,15,15,W-30,H-30,R(36)); g.fillStyle=face; g.fill();
   // name
-  g.fillStyle='#2a2118'; g.font='bold 46px Georgia, serif';
+  g.fillStyle=ink; g.font='bold 46px Georgia, serif';
   const nl = wrapText(g,d.name||'Unnamed Equipment',670).slice(0,2);
   nl.forEach((l,i)=>g.fillText(l,40,45+i*52));
   const ul = 45 + nl.length*52 + 8;   // underline sits right under the name
@@ -400,11 +510,11 @@ async function cardBlob(d){
   rr(g,fx,fy,fw,fh,R(14)); g.strokeStyle=tc; g.lineWidth=8; g.stroke();
   // type badge
   g.font='24px Georgia, serif';
-  const label=d.type.toUpperCase().split('').join('\u200A');
+  const label=(cu ? (d.typeName||'Custom') : d.type).toUpperCase().split('').join('\u200A');
   const pw=g.measureText(label).width+44;
   const py = fy+fh+25;
   rr(g,40,py,pw,44,R(22)); g.fillStyle=tc; g.fill();
-  g.fillStyle='#fff'; g.fillText(label,62,py+10);
+  g.fillStyle = cu ? textOn(d.border) : '#fff'; g.fillText(label,62,py+10);
   // description
   const by = py+44+21, bh = 1010-by;
   rr(g,40,by,670,bh,R(16)); g.strokeStyle=tc; g.lineWidth=3; g.stroke();
@@ -421,7 +531,7 @@ async function cardBlob(d){
     });
     if (y <= bh-40) break;
   }
-  g.fillStyle='#2a2118';
+  g.fillStyle=ink;
   laid.forEach(o=>{ g.font=o.f; g.fillText(o.l,60,by+20+o.y); });
   return new Promise(r=>cv.toBlob(r,'image/png'));
 }
@@ -452,8 +562,8 @@ $('png').addEventListener('click', () => exportPng(state, 'msg'));
 function renderLib(){
   const q = $('q').value.trim().toLowerCase(), t = $('ft').value;
   const hits = loadAll().filter(c =>
-    (!t || c.type === t) &&
-    (!q || (c.name + ' ' + c.desc).toLowerCase().includes(q)));
+    (!t || (t === 'Custom' ? c.kind === 'custom' : c.kind !== 'custom' && c.type === t)) &&
+    (!q || searchText(c).includes(q)));
   const lib = $('lib'); lib.replaceChildren();
   if (!hits.length){
     const p = document.createElement('p'); p.className = 'empty';
@@ -465,7 +575,7 @@ function renderLib(){
     item.appendChild(buildCard(c, false));
     const row = document.createElement('div'); row.className = 'row';
     const ed = document.createElement('button'); ed.textContent = 'Edit';
-    ed.onclick = () => { state = {...c}; syncForm(); say('Editing “' + c.name + '”.'); window.scrollTo({top:0, behavior:'smooth'}); };
+    ed.onclick = () => { openCard(c); say('Editing “' + c.name + '”.'); window.scrollTo({top:0, behavior:'smooth'}); };
     const del = document.createElement('button'); del.textContent = 'Delete';
     del.onclick = () => { saveAll(loadAll().filter(x => x.id !== c.id)); renderLib(); };
     const pg = document.createElement('button'); pg.textContent = 'PNG';
