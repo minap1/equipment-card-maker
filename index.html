@@ -69,6 +69,8 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
         <select id="type"><option>Armor</option><option selected>Weapon</option><option>Magic Item</option></select>
         <label for="stat" id="statlabel">Damage</label>
         <input id="stat" type="text" maxlength="160" placeholder="Optional">
+        <label for="range">Range</label>
+        <select id="range"></select>
         <label for="use">Use Cooldown (turns)</label>
         <input id="use" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
         <label for="unequip">Unequip Cooldown (turns)</label>
@@ -117,7 +119,17 @@ const KEY = 'equipmentCards.v1';
 const $ = id => document.getElementById(id);
 let state = blank();
 
-function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',use:'',unequip:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,corners:'rounded'}; }
+function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',range:'',use:'',unequip:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,corners:'rounded'}; }
+
+const RANGE_OPTIONS = ['Short', 'Medium', 'Long', 'Remote'];
+
+function buildRangeSelect(){
+  $('range').replaceChildren(
+    new Option('None', ''),                       // empty value = not set
+    ...RANGE_OPTIONS.map(o => new Option(o, o))
+  );
+}
+buildRangeSelect();
 
 const STAT_LABEL = {Weapon:'Damage', Armor:'Defense', 'Magic Item':'Effect'};
 // Lines shown at the top of the description box; empty fields are skipped.
@@ -125,6 +137,7 @@ function lineList(d){
   const v = s => (s == null ? '' : String(s)).trim(), L = [];
   const turns = n => n + (n === '1' ? ' turn' : ' turns');
   if (v(d.stat)) L.push(STAT_LABEL[d.type] + ': ' + v(d.stat));
+  if (v(d.range)) L.push('Range: ' + v(d.range));
   if (v(d.use)) L.push('Use Cooldown: ' + turns(v(d.use)));
   if (v(d.unequip)) L.push('Unequip Cooldown: ' + turns(v(d.unequip)));
   if (v(d.cost)) L.push('Etching Cost: ' + v(d.cost) + ' trace');
@@ -217,7 +230,7 @@ function setZoom(z){
 }
 
 /* ---------- import JSON ---------- */
-const FIELD_LIMITS = {name:40, desc:160, stat:40, use:10, unequip:10, cost:10, etch:60};
+const FIELD_LIMITS = {name:40, desc:160, stat:160, use:10, unequip:10, cost:10, etch:60};
 
 function checkImport(raw){
   // Must be one plain object (rejects null, numbers, strings, true/false, arrays)
@@ -255,7 +268,7 @@ function checkImport(raw){
       return {error: '"image" must be an image data URL or empty.'};
     card.image = raw.image;
   }
-
+  card.range = RANGE_OPTIONS.includes(raw.range) ? raw.range : '';
   return {card};
 }
 
@@ -299,7 +312,7 @@ $('photo').addEventListener('change', e => {
 });
 $('name').addEventListener('input', e => { state.name = e.target.value; renderLive(); });
 $('type').addEventListener('change', e => { state.type = e.target.value; $('statlabel').textContent = STAT_LABEL[state.type]; renderLive(); });
-['stat','use','unequip','cost','etch'].forEach(k => $(k).addEventListener('input', e => { state[k] = e.target.value; renderLive(); }));
+['stat','range','use','unequip','cost','etch'].forEach(k => $(k).addEventListener('input', e => { state[k] = e.target.value; renderLive(); }));
 $('desc').addEventListener('input', e => { state.desc = e.target.value; $('dc').textContent = state.desc.length; renderLive(); });
 $('zoom').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
 $('reset').addEventListener('click', () => { state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1; renderLive(); });
@@ -312,7 +325,7 @@ $('corners').addEventListener('click', () => {
 function syncForm(){
   $('name').value = state.name; $('type').value = state.type; $('desc').value = state.desc;
   $('dc').textContent = state.desc.length; $('zoom').value = state.zoom; $('photo').value = '';
-  ['stat','use','unequip','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
+  ['stat','range','use','unequip','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
   updateCornersBtn();
   $('statlabel').textContent = STAT_LABEL[state.type];
   renderLive();
