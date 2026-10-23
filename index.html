@@ -23,7 +23,7 @@ input,select,textarea,button{font:inherit;color:var(--text)}
 input[type=text],input[type=search],input[type=number],select,textarea{width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
 textarea{resize:vertical;min-height:80px}
 input[type=range]{width:100%}
-.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:14px}
 button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--bg);cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .count{font-size:.8rem;color:var(--muted);text-align:right}
@@ -93,6 +93,8 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
         <label for="zoom">Photo zoom</label>
         <input id="zoom" type="range" min="0.5" max="4" step="0.01" value="1">
         <div class="hint">The whole photo is shown at first. Zoom in to crop, drag the photo on the card to reposition, or scroll over it to zoom.</div>
+        <textarea id="import-item-json" placeholder="Paste item JSON."></textarea>
+        <button id="import" type="button">Import JSON</button>
       </div>
     </div>
   </section>
@@ -210,6 +212,67 @@ function setZoom(z){
   $('zoom').value = state.zoom;
   const f = $('live').querySelector('.c-frame'); if (f) applyTransform(f);
 }
+
+/* ---------- import JSON ---------- */
+const FIELD_LIMITS = {name:40, desc:160, stat:40, use:10, unequip:10, cost:10, etch:60};
+
+function checkImport(raw){
+  // Must be one plain object (rejects null, numbers, strings, true/false, arrays)
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
+    return {error: 'The JSON must be a single card object.'};
+
+  const card = blank();   // known fields only, with defaults; id stays null
+
+  // Required: a valid type
+  if (!['Armor', 'Weapon', 'Magic Item'].includes(raw.type))
+    return {error: '"type" must be Armor, Weapon or Magic Item.'};
+  card.type = raw.type;
+
+  // Text fields: optional, accept text or numbers, trim to the form's max length
+  for (const [k, max] of Object.entries(FIELD_LIMITS)){
+    const v = raw[k];
+    if (v === undefined || v === null || v === '') continue;
+    if (typeof v !== 'string' && typeof v !== 'number')
+      return {error: `"${k}" must be text or a number.`};
+    card[k] = String(v).slice(0, max);
+  }
+
+  // Number fields: optional, must be real numbers, clamped to the editor's ranges
+  const ranges = {zoom: [0.5, 4], x: [-1, 1], y: [-1, 1]};
+  for (const [k, [lo, hi]] of Object.entries(ranges)){
+    if (raw[k] === undefined) continue;
+    if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k]))
+      return {error: `"${k}" must be a number.`};
+    card[k] = Math.min(hi, Math.max(lo, raw[k]));
+  }
+
+  // Image: optional, but if present it must be an image data URL
+  if (raw.image){
+    if (typeof raw.image !== 'string' || !raw.image.startsWith('data:image/'))
+      return {error: '"image" must be an image data URL or empty.'};
+    card.image = raw.image;
+  }
+
+  return {card};
+}
+
+$('import').addEventListener('click', () => {
+  let raw;
+  try {
+    raw = JSON.parse($('import-item-json').value);
+  } catch (e) {
+    say('That isn’t valid JSON: ' + e.message);
+    return;
+  }
+
+  const {card, error} = checkImport(raw);
+  if (error){ say(error); return; }
+
+  state = card;                       // id is null, so the first Save creates a new card
+  syncForm();                         // also re-renders the live card
+  $('import-item-json').value = '';
+  say('Card imported. Save it to add it to your library.');
+});
 
 /* ---------- inputs ---------- */
 $('photo').addEventListener('change', e => {
