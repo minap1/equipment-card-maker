@@ -42,6 +42,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .c-desc{flex:1;border:1px solid var(--tc);border-radius:8px;padding:6px 8px;font-size:.8em;line-height:1.35;overflow:hidden;overflow-wrap:anywhere}
 .c-text{font-style:italic}.c-desc div+.c-text{margin-top:.35em}
 .preview .card{font-size:16px}
+.card[data-corners="sharp"],.card[data-corners="sharp"] .c-frame,.card[data-corners="sharp"] .c-desc,.card[data-corners="sharp"] .c-type{border-radius:0}
 /* library */
 .filters{display:grid;grid-template-columns:1fr 180px;gap:10px;margin-bottom:16px}
 @media(max-width:520px){.filters{grid-template-columns:1fr}}
@@ -90,6 +91,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
       </div>
       <div class="preview">
         <div id="live"></div>
+        <button id="corners" type="button">Corners: Rounded</button>
         <label for="zoom">Photo zoom</label>
         <input id="zoom" type="range" min="0.5" max="4" step="0.01" value="1">
         <div class="hint">The whole photo is shown at first. Zoom in to crop, drag the photo on the card to reposition, or scroll over it to zoom.</div>
@@ -115,7 +117,7 @@ const KEY = 'equipmentCards.v1';
 const $ = id => document.getElementById(id);
 let state = blank();
 
-function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',use:'',unequip:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0}; }
+function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',use:'',unequip:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,corners:'rounded'}; }
 
 const STAT_LABEL = {Weapon:'Damage', Armor:'Defense', 'Magic Item':'Effect'};
 // Lines shown at the top of the description box; empty fields are skipped.
@@ -150,6 +152,7 @@ function saveAll(list){
 function buildCard(d, editable){
   const c = document.createElement('div');
   c.className = 'card'; c.dataset.type = d.type;
+  c.dataset.corners = d.corners === 'sharp' ? 'sharp' : 'rounded';   // missing = rounded (older cards)
   const head = document.createElement('div'); head.className = 'c-head';
   const nm = document.createElement('div'); nm.className = 'c-name';
   nm.textContent = d.name || 'Unnamed Equipment';
@@ -300,11 +303,17 @@ $('type').addEventListener('change', e => { state.type = e.target.value; $('stat
 $('desc').addEventListener('input', e => { state.desc = e.target.value; $('dc').textContent = state.desc.length; renderLive(); });
 $('zoom').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
 $('reset').addEventListener('click', () => { state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1; renderLive(); });
+function updateCornersBtn(){ $('corners').textContent = 'Corners: ' + (state.corners === 'sharp' ? 'Sharp' : 'Rounded'); }
+$('corners').addEventListener('click', () => {
+  state.corners = state.corners === 'sharp' ? 'rounded' : 'sharp';
+  updateCornersBtn(); renderLive();
+});
 
 function syncForm(){
   $('name').value = state.name; $('type').value = state.type; $('desc').value = state.desc;
   $('dc').textContent = state.desc.length; $('zoom').value = state.zoom; $('photo').value = '';
   ['stat','use','unequip','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
+  updateCornersBtn();
   $('statlabel').textContent = STAT_LABEL[state.type];
   renderLive();
 }
@@ -353,10 +362,11 @@ function loadImg(src){ return new Promise((ok,no)=>{ const i=new Image(); i.onlo
 
 async function cardBlob(d){
   const W=750, H=1050, tc=COLORS[d.type]||'#777';
+  const R = r => d.corners === 'sharp' ? 0 : r;   // corner radius, zero when sharp
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
   const g=cv.getContext('2d'); g.textBaseline='top';
-  rr(g,0,0,W,H,48); g.fillStyle=tc; g.fill();
-  rr(g,15,15,W-30,H-30,36); g.fillStyle='#fbf6e8'; g.fill();
+  rr(g,0,0,W,H,R(48)); g.fillStyle=tc; g.fill();
+  rr(g,15,15,W-30,H-30,R(36)); g.fillStyle='#fbf6e8'; g.fill();
   // name
   g.fillStyle='#2a2118'; g.font='bold 46px Georgia, serif';
   const nl = wrapText(g,d.name||'Unnamed Equipment',670).slice(0,2);
@@ -365,26 +375,26 @@ async function cardBlob(d){
   g.fillStyle=tc; g.fillRect(40,ul,670,5);
   // photo frame (fit inside, then pan + zoom, same as the live card)
   const fx=40, fy=ul+25, fw=670, fh=440;
-  rr(g,fx,fy,fw,fh,14); g.fillStyle='rgba(128,128,128,.18)'; g.fill();
+  rr(g,fx,fy,fw,fh,R(14)); g.fillStyle='rgba(128,128,128,.18)'; g.fill();
   if (d.image){
     const im=await loadImg(d.image);
-    g.save(); rr(g,fx,fy,fw,fh,14); g.clip();
+    g.save(); rr(g,fx,fy,fw,fh,R(14)); g.clip();
     const s=Math.min(fw/im.width, fh/im.height);
     g.translate(fx+fw/2+d.x*fw, fy+fh/2+d.y*fh); g.scale(d.zoom,d.zoom);
     g.drawImage(im,-im.width*s/2,-im.height*s/2,im.width*s,im.height*s);
     g.restore();
   }
-  rr(g,fx,fy,fw,fh,14); g.strokeStyle=tc; g.lineWidth=8; g.stroke();
+  rr(g,fx,fy,fw,fh,R(14)); g.strokeStyle=tc; g.lineWidth=8; g.stroke();
   // type badge
   g.font='24px Georgia, serif';
   const label=d.type.toUpperCase().split('').join('\u200A');
   const pw=g.measureText(label).width+44;
   const py = fy+fh+25;
-  rr(g,40,py,pw,44,22); g.fillStyle=tc; g.fill();
+  rr(g,40,py,pw,44,R(22)); g.fillStyle=tc; g.fill();
   g.fillStyle='#fff'; g.fillText(label,62,py+10);
   // description
   const by = py+44+21, bh = 1010-by;
-  rr(g,40,by,670,bh,16); g.strokeStyle=tc; g.lineWidth=3; g.stroke();
+  rr(g,40,by,670,bh,R(16)); g.strokeStyle=tc; g.lineWidth=3; g.stroke();
   const items = lineList(d).map(t=>({t, f:''}));
   if ((d.desc||'').trim()) items.push({t:d.desc.trim(), f:'italic '});
   if (!items.length) items.push({t:'Description goes here.', f:'italic '});
