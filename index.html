@@ -81,8 +81,6 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
         <select id="range"></select>
         <label for="use">Use Cooldown (turns)</label>
         <input id="use" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
-        <label for="unequip">Unequip Cooldown (turns)</label>
-        <input id="unequip" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
         <label for="cost">Etching Cost (trace)</label>
         <input id="cost" type="number" min="0" step="1" inputmode="numeric" placeholder="Optional">
         <label for="etch">Etching</label>
@@ -115,7 +113,7 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
           <label for="cbg">Background color</label><input id="cbg" type="color">
         </div>
         <label for="zoom">Photo zoom</label>
-        <input id="zoom" type="range" min="0.5" max="4" step="0.01" value="1">
+        <input id="zoom" type="range" step="0.01" value="1">
         <div class="hint">The whole photo is shown at first. Zoom in to crop, drag the photo on the card to reposition, or scroll over it to zoom.</div>
         <textarea id="import-item-json" placeholder="Paste item JSON."></textarea>
         <button id="import" type="button">Import JSON</button>
@@ -142,6 +140,8 @@ let mode = 'original';
 const stash = {original:null, custom:null};   // unsaved work kept per tab
 
 const MAX_FIELDS = 8;
+const ZOOM_MIN = 0.5, ZOOM_MAX = 8;   // photo zoom limits: change these two numbers
+$('zoom').min = ZOOM_MIN; $('zoom').max = ZOOM_MAX;
 function blankCustom(){ return {kind:'custom',id:null,name:'',typeName:'',desc:'',fields:[],image:'',zoom:1,x:0,y:0,corners:'rounded',border:'#5b6b7a',bg:'#fbf6e8'}; }
 function textOn(hex){   // readable text color for a background
   const n = parseInt(String(hex).slice(1), 16) || 0, r = n>>16&255, g = n>>8&255, b = n&255;
@@ -159,9 +159,9 @@ function searchText(c){
   const extra = c.kind === 'custom' ? [c.typeName, ...(c.fields || []).flatMap(f => [f.label, f.value, f.unit])] : [];
   return [c.name, c.desc, ...extra].join(' ').toLowerCase();
 }
-function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',range:'',use:'',unequip:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,corners:'rounded'}; }
+function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',range:'',use:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,corners:'rounded'}; }
 
-const RANGE_OPTIONS = ['Short', 'Medium', 'Long', 'Remote'];
+const RANGE_OPTIONS = ['Close', 'Short', 'Medium', 'Long', 'Remote'];
 
 function buildRangeSelect(){
   $('range').replaceChildren(
@@ -180,7 +180,6 @@ function lineList(d){
   if (v(d.stat)) L.push(STAT_LABEL[d.type] + ': ' + v(d.stat));
   if (v(d.range)) L.push('Range: ' + v(d.range));
   if (v(d.use)) L.push('Use Cooldown: ' + turns(v(d.use)));
-  if (v(d.unequip)) L.push('Unequip Cooldown: ' + turns(v(d.unequip)));
   if (v(d.cost)) L.push('Etching Cost: ' + v(d.cost) + ' trace');
   if (v(d.etch)) L.push('Etching: ' + v(d.etch));
   return L;
@@ -261,22 +260,22 @@ function attachDrag(frame){
     setZoom(state.zoom + (e.deltaY < 0 ? 0.08 : -0.08));
   }, {passive:false});
 }
-function clampPan(v){ return Math.max(-1, Math.min(1, v)); }
+function clampPan(v){ const lim = Math.max(1, state.zoom/2); return Math.max(-lim, Math.min(lim, v)); }   // wider pan range when zoomed in
 function applyTransform(frame){
   const img = frame.querySelector('img');
   if (img) img.style.transform = `translate(${state.x*100}%,${state.y*100}%) scale(${state.zoom})`;
 }
 function setZoom(z){
-  state.zoom = Math.max(0.5, Math.min(4, z));
+  state.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
   $('zoom').value = state.zoom;
   const f = $('live').querySelector('.c-frame'); if (f) applyTransform(f);
 }
 
 /* ---------- import JSON ---------- */
-const FIELD_LIMITS = {name:40, desc:160, stat:160, use:10, unequip:10, cost:10, etch:60};
+const FIELD_LIMITS = {name:40, desc:160, stat:160, use:10, cost:10, etch:60};
 
 function applyShared(raw, card){   // photo, framing and corners: same rules for both kinds
-  const ranges = {zoom: [0.5, 4], x: [-1, 1], y: [-1, 1]};
+  const ranges = {zoom: [ZOOM_MIN, ZOOM_MAX], x: [-ZOOM_MAX/2, ZOOM_MAX/2], y: [-ZOOM_MAX/2, ZOOM_MAX/2]};
   for (const [k, [lo, hi]] of Object.entries(ranges)){
     if (raw[k] === undefined) continue;
     if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k])) return '"' + k + '" must be a number.';
@@ -371,7 +370,7 @@ $('photo').addEventListener('change', e => {
 });
 $('name').addEventListener('input', e => { state.name = e.target.value; renderLive(); });
 $('type').addEventListener('change', e => { state.type = e.target.value; $('statlabel').textContent = STAT_LABEL[state.type]; renderLive(); });
-['stat','range','use','unequip','cost','etch'].forEach(k => $(k).addEventListener('input', e => { state[k] = e.target.value; renderLive(); }));
+['stat','range','use','cost','etch'].forEach(k => $(k).addEventListener('input', e => { state[k] = e.target.value; renderLive(); }));
 $('desc').addEventListener('input', e => { state.desc = e.target.value; $('dc').textContent = state.desc.length; renderLive(); });
 $('zoom').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
 $('reset').addEventListener('click', () => { state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1; renderLive(); });
@@ -392,7 +391,7 @@ function syncForm(){
     $('ctype').value = state.typeName; $('cborder').value = state.border; $('cbg').value = state.bg; renderFields();
   } else {
     $('type').value = state.type;
-    ['stat','range','use','unequip','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
+    ['stat','range','use','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
     $('statlabel').textContent = STAT_LABEL[state.type];
   }
   updateCornersBtn();
