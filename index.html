@@ -56,6 +56,18 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .fbox .row{margin-top:8px}.fbox button{padding:2px 10px}
 input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
 [hidden]{display:none!important}
+.tools{display:flex;align-items:center;gap:4px;margin:6px 0}
+.tools .zi{flex:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--muted);opacity:.55;cursor:default;user-select:none;margin-right:2px}
+.tools input[type=range]{flex:1;width:auto;min-width:0;margin:0 6px 0 0}
+.tools button{width:32px;height:32px;padding:0;display:grid;place-items:center;border-radius:6px}
+.tools button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.c-frame.cropmode{cursor:default}
+.c-crop{position:absolute;inset:0;pointer-events:none}
+.c-box{position:absolute;border:2px dashed #fff;outline:1px solid rgba(0,0,0,.6)}
+.c-h{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;background:#fff;border:2px solid var(--accent);border-radius:3px;pointer-events:auto;touch-action:none}
+.h-nw{left:0;top:0;cursor:nwse-resize}.h-n{left:50%;top:0;cursor:ns-resize}.h-ne{left:100%;top:0;cursor:nesw-resize}
+.h-e{left:100%;top:50%;cursor:ew-resize}.h-se{left:100%;top:100%;cursor:nwse-resize}.h-s{left:50%;top:100%;cursor:ns-resize}
+.h-sw{left:0;top:100%;cursor:nesw-resize}.h-w{left:0;top:50%;cursor:ew-resize}
 </style>
 </head>
 <body>
@@ -107,14 +119,17 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
       </div>
       <div class="preview">
         <div id="live"></div>
+        <div class="tools">
+          <span class="zi" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+          <input id="zoom" type="range" step="0.01" value="1" aria-label="Photo zoom">
+          <button id="tool-move" type="button" class="on" title="Move photo" aria-label="Move photo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
+          <button id="tool-crop" type="button" title="Crop photo" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/></svg></button>
+        </div>
         <button id="corners" type="button">Corners: Rounded</button>
         <div id="colors" hidden>
           <label for="cborder">Border color</label><input id="cborder" type="color">
           <label for="cbg">Background color</label><input id="cbg" type="color">
         </div>
-        <label for="zoom">Photo zoom</label>
-        <input id="zoom" type="range" step="0.01" value="1">
-        <div class="hint">The whole photo is shown at first. Zoom in to crop, drag the photo on the card to reposition, or scroll over it to zoom.</div>
         <textarea id="import-item-json" placeholder="Paste item JSON."></textarea>
         <button id="import" type="button">Import JSON</button>
       </div>
@@ -137,12 +152,13 @@ const KEY = 'equipmentCards.v1';
 const $ = id => document.getElementById(id);
 let state = blank();
 let mode = 'original';
+let tool = 'move';   // 'move' drags the photo, 'crop' shows crop handles
 const stash = {original:null, custom:null};   // unsaved work kept per tab
 
 const MAX_FIELDS = 8;
-const ZOOM_MIN = 0.5, ZOOM_MAX = 8;   // photo zoom limits: change these two numbers
+const ZOOM_MIN = 0.5, ZOOM_MAX = 10;   // photo zoom limits: change these two numbers
 $('zoom').min = ZOOM_MIN; $('zoom').max = ZOOM_MAX;
-function blankCustom(){ return {kind:'custom',id:null,name:'',typeName:'',desc:'',fields:[],image:'',zoom:1,x:0,y:0,corners:'rounded',border:'#5b6b7a',bg:'#fbf6e8'}; }
+function blankCustom(){ return {kind:'custom',id:null,name:'',typeName:'',desc:'',fields:[],image:'',zoom:1,x:0,y:0,cropT:0,cropR:0,cropB:0,cropL:0,corners:'rounded',border:'#5b6b7a',bg:'#fbf6e8'}; }
 function textOn(hex){   // readable text color for a background
   const n = parseInt(String(hex).slice(1), 16) || 0, r = n>>16&255, g = n>>8&255, b = n&255;
   return (0.299*r + 0.587*g + 0.114*b) > 150 ? '#2a2118' : '#f5efe0';
@@ -159,7 +175,7 @@ function searchText(c){
   const extra = c.kind === 'custom' ? [c.typeName, ...(c.fields || []).flatMap(f => [f.label, f.value, f.unit])] : [];
   return [c.name, c.desc, ...extra].join(' ').toLowerCase();
 }
-function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',range:'',use:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,corners:'rounded'}; }
+function blank(){ return {id:null,name:'',type:'Weapon',desc:'',stat:'',range:'',use:'',cost:'',etch:'',image:'',zoom:1,x:0,y:0,cropT:0,cropR:0,cropB:0,cropL:0,corners:'rounded'}; }
 
 const RANGE_OPTIONS = ['Close', 'Short', 'Medium', 'Long', 'Remote'];
 
@@ -185,6 +201,57 @@ function lineList(d){
   return L;
 }
 // Shrink the description text until it fits inside its box.
+const dimCache = new Map();   // image size by source, so re-renders can crop without waiting for a reload
+function imgDims(img){
+  const k = img.src.length + img.src.slice(-48);
+  if (img.naturalWidth) dimCache.set(k, [img.naturalWidth, img.naturalHeight]);
+  return dimCache.get(k);
+}
+function cropGeom(fr){   // where the photo sits inside the frame, before zoom and pan
+  const img = fr.querySelector('img'), dm = img && imgDims(img), fw = fr.clientWidth, fh = fr.clientHeight;
+  if (!dm || !fw || !fh) return null;
+  const sc = Math.min(fw/dm[0], fh/dm[1]), cw = dm[0]*sc, ch = dm[1]*sc;
+  return {img, fw, fh, cw, ch, ox:(fw-cw)/2, oy:(fh-ch)/2};
+}
+function applyCrops(root){   // clip-path trims the photo; zoom and position are untouched
+  root.querySelectorAll('.c-frame').forEach(fr => {
+    const g = cropGeom(fr); if (!g) return;
+    const [t, r, b, l] = (fr.dataset.crop || '0,0,0,0').split(',').map(Number);
+    g.img.style.clipPath = `inset(${g.oy+g.ch*t}px ${g.ox+g.cw*r}px ${g.oy+g.ch*b}px ${g.ox+g.cw*l}px)`;
+    const box = fr.querySelector('.c-box'); if (!box) return;
+    const z = Number(fr.dataset.zoom) || 1, px = Number(fr.dataset.px) || 0, py = Number(fr.dataset.py) || 0;
+    const X = v => g.fw/2 + (v - g.fw/2)*z + px*g.fw, Y = v => g.fh/2 + (v - g.fh/2)*z + py*g.fh;
+    const x1 = X(g.ox+g.cw*l), x2 = X(g.ox+g.cw*(1-r)), y1 = Y(g.oy+g.ch*t), y2 = Y(g.oy+g.ch*(1-b));
+    Object.assign(box.style, {left:x1+'px', top:y1+'px', width:(x2-x1)+'px', height:(y2-y1)+'px'});
+  });
+}
+function buildCropBox(frame){   // dashed box with 8 drag handles; edits the crop in place
+  const ov = document.createElement('div'); ov.className = 'c-crop';
+  const box = document.createElement('div'); box.className = 'c-box'; ov.appendChild(box);
+  ['nw','n','ne','e','se','s','sw','w'].forEach(h => {
+    const hd = document.createElement('div'); hd.className = 'c-h h-' + h; box.appendChild(hd);
+    let st = null;
+    hd.addEventListener('pointerdown', ev => {
+      const g = cropGeom(frame); if (!g) return;
+      ev.stopPropagation(); hd.setPointerCapture(ev.pointerId);
+      st = {x:ev.clientX, y:ev.clientY, g, T:state.cropT||0, R:state.cropR||0, B:state.cropB||0, L:state.cropL||0};
+    });
+    hd.addEventListener('pointermove', ev => {
+      if (!st) return;
+      const z = state.zoom, dx = (ev.clientX - st.x)/z/st.g.cw, dy = (ev.clientY - st.y)/z/st.g.ch;
+      const lim = (v, opp) => Math.max(0, Math.min(v, 0.95 - opp));   // never crop everything
+      if (h.includes('w')) state.cropL = lim(st.L + dx, st.R);
+      if (h.includes('e')) state.cropR = lim(st.R - dx, st.L);
+      if (h.includes('n')) state.cropT = lim(st.T + dy, st.B);
+      if (h.includes('s')) state.cropB = lim(st.B - dy, st.T);
+      frame.dataset.crop = [state.cropT, state.cropR, state.cropB, state.cropL].join(',');
+      applyCrops(frame.parentNode);
+    });
+    const end = () => { st = null; };
+    hd.addEventListener('pointerup', end); hd.addEventListener('pointercancel', end);
+  });
+  return ov;
+}
 function fitDesc(root){
   root.querySelectorAll('.c-desc').forEach(el => {
     let k = 1; el.style.fontSize = '';
@@ -212,12 +279,16 @@ function buildCard(d, editable){
   nm.textContent = d.name || 'Unnamed Equipment';
   head.appendChild(nm);
   const frame = document.createElement('div');
-  frame.className = 'c-frame' + (editable ? ' edit' : '');
+  frame.className = 'c-frame' + (editable ? ' edit' : '') + (editable && tool === 'crop' ? ' cropmode' : '');
   if (d.image){
     const img = document.createElement('img');
     img.src = d.image; img.alt = '';
+    frame.dataset.crop = [d.cropT, d.cropR, d.cropB, d.cropL].map(v => v || 0).join(',');
+    frame.dataset.zoom = d.zoom; frame.dataset.px = d.x; frame.dataset.py = d.y;
+    img.onload = () => applyCrops(c);
     img.style.transform = `translate(${d.x*100}%,${d.y*100}%) scale(${d.zoom})`;
     frame.appendChild(img);
+    if (editable && tool === 'crop') frame.appendChild(buildCropBox(frame));
   } else {
     const ph = document.createElement('div'); ph.className = 'c-ph';
     ph.textContent = 'Upload a photo'; frame.appendChild(ph);
@@ -234,14 +305,14 @@ function buildCard(d, editable){
 }
 
 function renderLive(){
-  const host = $('live'); host.replaceChildren(buildCard(state, true)); fitDesc(host);
+  const host = $('live'); host.replaceChildren(buildCard(state, true)); fitDesc(host); applyCrops(host);
 }
 
 /* ---------- photo editing on the card ---------- */
 function attachDrag(frame){
   let drag = null;
   frame.addEventListener('pointerdown', e => {
-    if (!state.image) return;
+    if (!state.image || tool !== 'move') return;
     frame.setPointerCapture(e.pointerId);
     drag = {px:e.clientX, py:e.clientY, x:state.x, y:state.y, w:frame.clientWidth, h:frame.clientHeight};
   });
@@ -264,6 +335,8 @@ function clampPan(v){ const lim = Math.max(1, state.zoom/2); return Math.max(-li
 function applyTransform(frame){
   const img = frame.querySelector('img');
   if (img) img.style.transform = `translate(${state.x*100}%,${state.y*100}%) scale(${state.zoom})`;
+  frame.dataset.zoom = state.zoom; frame.dataset.px = state.x; frame.dataset.py = state.y;
+  if (frame.parentNode) applyCrops(frame.parentNode);
 }
 function setZoom(z){
   state.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
@@ -285,6 +358,13 @@ function applyShared(raw, card){   // photo, framing and corners: same rules for
     if (typeof raw.image !== 'string' || !raw.image.startsWith('data:image/')) return '"image" must be an image data URL or empty.';
     card.image = raw.image;
   }
+  for (const k of ['cropT','cropR','cropB','cropL']){
+    if (raw[k] === undefined) continue;
+    if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k])) return '"' + k + '" must be a number.';
+    card[k] = Math.min(0.9, Math.max(0, raw[k]));
+  }
+  if (card.cropL + card.cropR > 0.95) card.cropL = card.cropR = 0;
+  if (card.cropT + card.cropB > 0.95) card.cropT = card.cropB = 0;
   card.corners = raw.corners === 'sharp' ? 'sharp' : 'rounded';
   return null;
 }
@@ -361,7 +441,7 @@ $('photo').addEventListener('change', e => {
       cv.width = Math.round(im.width*s); cv.height = Math.round(im.height*s);
       cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
       state.image = cv.toDataURL('image/jpeg', 0.8);
-      state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1;
+      state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1; resetCrop();
       renderLive();
     };
     im.src = reader.result;
@@ -373,7 +453,15 @@ $('type').addEventListener('change', e => { state.type = e.target.value; $('stat
 ['stat','range','use','cost','etch'].forEach(k => $(k).addEventListener('input', e => { state[k] = e.target.value; renderLive(); }));
 $('desc').addEventListener('input', e => { state.desc = e.target.value; $('dc').textContent = state.desc.length; renderLive(); });
 $('zoom').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
-$('reset').addEventListener('click', () => { state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1; renderLive(); });
+$('reset').addEventListener('click', () => { state.zoom = 1; state.x = 0; state.y = 0; $('zoom').value = 1; resetCrop(); renderLive(); });
+function resetCrop(){ state.cropT = state.cropR = state.cropB = state.cropL = 0; }
+function setTool(t){
+  tool = t;
+  $('tool-move').classList.toggle('on', t === 'move'); $('tool-crop').classList.toggle('on', t === 'crop');
+  renderLive();
+}
+$('tool-move').addEventListener('click', () => setTool('move'));
+$('tool-crop').addEventListener('click', () => setTool('crop'));
 function updateCornersBtn(){ $('corners').textContent = 'Corners: ' + (state.corners === 'sharp' ? 'Sharp' : 'Rounded'); }
 $('corners').addEventListener('click', () => {
   state.corners = state.corners === 'sharp' ? 'rounded' : 'sharp';
@@ -503,7 +591,9 @@ async function cardBlob(d){
     g.save(); rr(g,fx,fy,fw,fh,R(14)); g.clip();
     const s=Math.min(fw/im.width, fh/im.height);
     g.translate(fx+fw/2+d.x*fw, fy+fh/2+d.y*fh); g.scale(d.zoom,d.zoom);
-    g.drawImage(im,-im.width*s/2,-im.height*s/2,im.width*s,im.height*s);
+    const cw=im.width*s, ch=im.height*s, ct=d.cropT||0, cr=d.cropR||0, cb=d.cropB||0, cl=d.cropL||0;
+    g.beginPath(); g.rect(-cw/2+cw*cl, -ch/2+ch*ct, cw*(1-cl-cr), ch*(1-ct-cb)); g.clip();   // crop
+    g.drawImage(im,-cw/2,-ch/2,cw,ch);
     g.restore();
   }
   rr(g,fx,fy,fw,fh,R(14)); g.strokeStyle=tc; g.lineWidth=8; g.stroke();
@@ -579,7 +669,7 @@ function renderLib(){
     del.onclick = () => { saveAll(loadAll().filter(x => x.id !== c.id)); renderLib(); };
     const pg = document.createElement('button'); pg.textContent = 'PNG';
     pg.onclick = () => exportPng(c, 'libmsg');
-    row.append(ed, pg, del); item.appendChild(row); lib.appendChild(item); fitDesc(item);
+    row.append(ed, pg, del); item.appendChild(row); lib.appendChild(item); fitDesc(item); applyCrops(item);
   });
 }
 $('q').addEventListener('input', renderLib);
