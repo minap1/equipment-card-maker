@@ -12,22 +12,24 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 *{box-sizing:border-box}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 Georgia,"Times New Roman",serif}
-main{max-width:980px;margin:0 auto;padding:20px 16px 48px}
+main{max-width:980px;margin:0 auto;padding:20px max(16px,env(safe-area-inset-right)) 48px max(16px,env(safe-area-inset-left))}
 h1{font-size:1.6rem;margin:0 0 4px}h2{font-size:1.2rem;margin:0 0 12px}
 .sub{color:var(--muted);margin:0 0 20px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:24px}
 .maker{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
-@media(max-width:720px){.maker{grid-template-columns:1fr}.preview{order:-1}}
+.maker > *{min-width:0}
+@media(max-width:720px){.maker{grid-template-columns:minmax(0,1fr)}.preview{order:-1;width:100%;max-width:340px;margin:0 auto}}
 label{display:block;font-size:.85rem;color:var(--muted);margin:12px 0 4px}
 input,select,textarea,button{font:inherit;color:var(--text)}
 input[type=text],input[type=search],input[type=number],select,textarea{width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
 textarea{resize:vertical;min-height:80px}
 input[type=range]{width:100%}
 .row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:14px}
-button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--bg);cursor:pointer}
+button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--bg);cursor:pointer;touch-action:manipulation}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .count{font-size:.8rem;color:var(--muted);text-align:right}
 .msg{min-height:1.4em;font-size:.9rem;color:var(--accent);margin-top:8px}
+#msg{text-align:center}
 .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
 /* card */
 .card{--tc:#777;width:100%;aspect-ratio:5/7;background:var(--card);color:var(--cardtext);border:6px solid var(--tc);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 6px 18px rgba(0,0,0,.25);overflow:hidden}
@@ -45,7 +47,6 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .card[data-corners="sharp"],.card[data-corners="sharp"] .c-frame,.card[data-corners="sharp"] .c-desc,.card[data-corners="sharp"] .c-type{border-radius:0}
 /* library */
 .filters{display:grid;grid-template-columns:1fr 180px;gap:10px;margin-bottom:16px}
-@media(max-width:520px){.filters{grid-template-columns:1fr}}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
 .grid .card{font-size:11px;padding:6px;border-width:4px}
 .item .row{margin-top:8px}.item button{padding:4px 10px;font-size:.85rem}
@@ -68,6 +69,26 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
 .h-nw{left:0;top:0;cursor:nwse-resize}.h-n{left:50%;top:0;cursor:ns-resize}.h-ne{left:100%;top:0;cursor:nesw-resize}
 .h-e{left:100%;top:50%;cursor:ew-resize}.h-se{left:100%;top:100%;cursor:nwse-resize}.h-s{left:50%;top:100%;cursor:ns-resize}
 .h-sw{left:0;top:100%;cursor:nesw-resize}.h-w{left:0;top:50%;cursor:ew-resize}
+/* mobile (kept last so it overrides the rules above) */
+@media(max-width:520px){
+  .filters{grid-template-columns:1fr}
+  main{padding-top:12px}
+  .panel{padding:12px;margin-bottom:16px}
+  h1{font-size:1.35rem}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}   /* two library cards per row */
+  .grid .card{font-size:9px;padding:5px;border-width:3px}
+  .item .row{gap:4px}.item button{padding:4px 8px}
+}
+@media(pointer:coarse){   /* touch screens: bigger tap targets */
+  button{min-height:44px}
+  .tools button,.tools .zi{width:44px;height:44px}
+  .fbox button{min-height:40px}
+  .item button{min-height:40px}
+  input[type=color]{height:40px}
+  input[type=range]{height:32px}
+  .c-h{width:22px;height:22px;margin:-11px 0 0 -11px}
+  .c-h::after{content:"";position:absolute;inset:-10px}   /* larger invisible grab area */
+}
 </style>
 </head>
 <body>
@@ -310,19 +331,30 @@ function renderLive(){
 
 /* ---------- photo editing on the card ---------- */
 function attachDrag(frame){
-  let drag = null;
+  const ptrs = new Map();          // active pointers (fingers or mouse) by id
+  let drag = null, pinch = null;
+  const startDrag = p => { drag = {px:p.clientX, py:p.clientY, x:state.x, y:state.y, w:frame.clientWidth, h:frame.clientHeight}; };
+  const dist = () => { const [a, b] = [...ptrs.values()]; return Math.hypot(a.x-b.x, a.y-b.y) || 1; };
   frame.addEventListener('pointerdown', e => {
     if (!state.image || tool !== 'move') return;
     frame.setPointerCapture(e.pointerId);
-    drag = {px:e.clientX, py:e.clientY, x:state.x, y:state.y, w:frame.clientWidth, h:frame.clientHeight};
+    ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if (ptrs.size === 2){ drag = null; pinch = {d:dist(), z:state.zoom}; }   // two fingers: pinch to zoom
+    else startDrag(e);
   });
   frame.addEventListener('pointermove', e => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if (pinch && ptrs.size === 2){ setZoom(pinch.z * dist() / pinch.d); return; }
     if (!drag) return;
     state.x = clampPan(drag.x + (e.clientX-drag.px)/drag.w);
     state.y = clampPan(drag.y + (e.clientY-drag.py)/drag.h);
     applyTransform(frame);
   });
-  const end = () => { drag = null; };
+  const end = e => {
+    ptrs.delete(e.pointerId); pinch = null; drag = null;
+    if (ptrs.size === 1){ const p = [...ptrs.values()][0]; startDrag({clientX:p.x, clientY:p.y}); }   // keep panning with the remaining finger
+  };
   frame.addEventListener('pointerup', end);
   frame.addEventListener('pointercancel', end);
   frame.addEventListener('wheel', e => {
