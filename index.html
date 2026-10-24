@@ -628,19 +628,34 @@ async function cardBlob(d){
 async function exportPng(d, msgId){
   const slug=(d.name||'equipment-card').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'equipment-card';
   try {
-    const blob = await cardBlob(d);
-    // Inside Claude the viewer provides the save dialog; anywhere else use a normal browser download.
+    // 1) Inside Claude the viewer provides its own save prompt.
     const dl = window.claude ? await window.claude.use('downloads') : null;
-    if (dl){
-      await dl.save({filename: slug+'.png', data: blob});
-    } else {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = slug+'.png';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (dl){ await dl.save({filename: slug+'.png', data: await cardBlob(d)}); say('PNG ready.', msgId); return; }
+
+    // 2) Chrome, Edge, Opera: a real Save As window. Ask first, while the click still counts as a user action.
+    let handle = null;
+    if (window.showSaveFilePicker){
+      try {
+        handle = await window.showSaveFilePicker({suggestedName: slug+'.png', types:[{description:'PNG image', accept:{'image/png':['.png']}}]});
+      } catch(e){
+        if (e && e.name === 'AbortError'){ say('Export cancelled.', msgId); return; }   // closed the dialog
+        // any other error (blocked in this context): fall through to a normal download
+      }
     }
-    say('PNG ready.', msgId);
+    const blob = await cardBlob(d);
+    if (handle){
+      const w = await handle.createWritable(); await w.write(blob); await w.close();
+      say('PNG saved.', msgId);
+      return;
+    }
+
+    // 3) Firefox, Safari and anything else: normal download to the browser's download folder.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = slug+'.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    say('PNG downloaded. Your browser chooses the folder; turn on “Always ask where to save files” in its download settings to pick one each time.', msgId);
   } catch(e){
     say(e && e.code==='declined' ? 'Download cancelled.' : 'Couldn’t export the PNG.', msgId);
   }
