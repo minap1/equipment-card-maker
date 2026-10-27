@@ -56,7 +56,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .filters{display:grid;grid-template-columns:1fr 180px;gap:10px;margin-bottom:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
 .grid .card{font-size:11px;padding:6px;border-width:4px}
-.item .row{margin-top:8px}.item button{padding:4px 10px;font-size:.85rem}
+.item .row{margin-top:8px;gap:4px;flex-wrap:nowrap}
+.item button{flex:1 1 0;min-width:0;max-width:34px;aspect-ratio:1;height:auto;padding:0;display:grid;place-items:center}   /* square */
+.item button:hover{border-color:var(--accent);color:var(--accent)}
 .empty{color:var(--muted)}
 .tabs{display:flex;gap:6px;margin-bottom:12px}.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .fbox{border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px}
@@ -64,6 +66,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .fbox .row{margin-top:8px}.fbox button{padding:2px 10px}
 input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
 [hidden]{display:none!important}
+button:disabled{opacity:.45;cursor:not-allowed}
 .tools{display:flex;align-items:center;gap:4px;margin:6px 0}
 .tools .zi{flex:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--muted);opacity:.55;cursor:default;user-select:none;margin-right:2px}
 .tools input[type=range]{flex:1;width:auto;min-width:0;margin:0 6px 0 0}
@@ -76,6 +79,13 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
 .h-nw{left:0;top:0;cursor:nwse-resize}.h-n{left:50%;top:0;cursor:ns-resize}.h-ne{left:100%;top:0;cursor:nesw-resize}
 .h-e{left:100%;top:50%;cursor:ew-resize}.h-se{left:100%;top:100%;cursor:nwse-resize}.h-s{left:50%;top:100%;cursor:ns-resize}
 .h-sw{left:0;top:100%;cursor:nesw-resize}.h-w{left:0;top:50%;cursor:ew-resize}
+.libbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.libbar .count{margin:0 0 0 auto;text-align:right}
+.item{position:relative}
+.pickable{cursor:pointer;user-select:none;-webkit-user-select:none}
+.pickable:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.item.sel .card{outline:4px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 9px rgba(138,90,28,.22)}
+#printarea{display:none}
 /* mobile (kept last so it overrides the rules above) */
 @media(max-width:520px){
   .filters{grid-template-columns:1fr}
@@ -84,17 +94,25 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
   h1{font-size:1.35rem}
   .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}   /* two library cards per row */
   .grid .card{font-size:9px;padding:5px;border-width:3px}
-  .item .row{gap:4px}.item button{padding:4px 8px}
 }
 @media(pointer:coarse){   /* touch screens: bigger tap targets */
   button{min-height:44px}
   .tools button,.tools .zi{width:44px;height:44px}
   .fbox button{min-height:40px}
-  .item button{min-height:40px}
+  .item button{min-height:0;max-width:44px}   /* bigger squares on touch, still square */
   input[type=color]{height:40px}
   input[type=range]{height:32px}
   .c-h{width:22px;height:22px;margin:-11px 0 0 -11px}
   .c-h::after{content:"";position:absolute;inset:-10px}   /* larger invisible grab area */
+}
+@page{size:portrait;margin:.2in}
+@media print{
+  body{background:#fff}
+  main{display:none!important}
+  #printarea{display:block}
+  .sheet{display:grid;grid-template-columns:repeat(3,2.5in);grid-auto-rows:3.5in;justify-content:center;break-after:page;page-break-after:always}
+  .sheet:last-child{break-after:auto;page-break-after:auto}
+  .sheet img{display:block;width:2.5in;height:3.5in}
 }
 </style>
 </head>
@@ -115,7 +133,7 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
           <span class="drop-sub">Ctrl+V (⌘V on Mac) to paste</span>
           <input id="photo" type="file" accept="image/*">
         </label>
-        <label for="name">Equipment name</label>
+        <label for="name" id="namelabel">Equipment name</label>
         <input id="name" type="text" maxlength="40" placeholder="e.g. Dawnbreaker Longsword">
         <div id="orig-fields">
         <label for="type">Equipment type</label>
@@ -132,7 +150,7 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
         <input id="etch" type="text" maxlength="160" placeholder="Optional short description">
         </div>
         <div id="cust-fields" hidden>
-          <label for="ctype">Equipment type</label>
+          <label for="ctype">Card type</label>
           <input id="ctype" type="text" maxlength="24" placeholder="e.g. Potion, Vehicle, Relic">
           <label>Custom fields</label>
           <div id="fieldlist"></div>
@@ -164,7 +182,8 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
           <label for="cbg">Background color</label><input id="cbg" type="color">
         </div>
         <textarea id="import-item-json" placeholder="Paste item JSON."></textarea>
-        <button id="import" type="button">Import JSON</button>
+        <button id="import" type="button" disabled>Import JSON</button>
+        <div class="hint" id="importmsg"></div>
       </div>
     </div>
   </section>
@@ -175,10 +194,18 @@ input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);
       <input id="q" type="search" placeholder="Search by name or description">
       <select id="ft"><option value="">All types</option><option>Armor</option><option>Weapon</option><option>Magic Item</option><option>Custom</option></select>
     </div>
+    <div class="libbar">
+      <button id="sel-all" type="button">Select all shown</button>
+      <button id="sel-none" type="button">Clear</button>
+      <button id="dl-sel" type="button" disabled>Download PNGs</button>
+      <button id="print-sel" type="button" class="primary" disabled>Print</button>
+      <span id="sel-count" class="count">Click cards to select</span>
+    </div>
     <div id="lib" class="grid"></div>
     <div class="msg" id="libmsg" role="status"></div>
   </section>
 </main>
+<div id="printarea" aria-hidden="true"></div>
 
 <script>
 const KEY = 'equipmentCards.v1';
@@ -309,7 +336,7 @@ function buildCard(d, editable){
   c.dataset.corners = d.corners === 'sharp' ? 'sharp' : 'rounded';   // missing = rounded (older cards)
   const head = document.createElement('div'); head.className = 'c-head';
   const nm = document.createElement('div'); nm.className = 'c-name';
-  nm.textContent = d.name || 'Unnamed Equipment';
+  nm.textContent = d.name || (d.kind === 'custom' ? 'Unnamed Card' : 'Unnamed Equipment');
   head.appendChild(nm);
   const frame = document.createElement('div');
   frame.className = 'c-frame' + (editable ? ' edit' : '') + (editable && tool === 'crop' ? ' cropmode' : '');
@@ -324,7 +351,7 @@ function buildCard(d, editable){
     if (editable && tool === 'crop') frame.appendChild(buildCropBox(frame));
   } else {
     const ph = document.createElement('div'); ph.className = 'c-ph';
-    ph.textContent = 'Upload a photo'; frame.appendChild(ph);
+    ph.textContent = 'Pending upload'; frame.appendChild(ph);
   }
   const ty = document.createElement('div'); ty.className = 'c-type'; ty.textContent = d.kind === 'custom' ? (d.typeName || 'Custom') : d.type;
   if (d.kind === 'custom') ty.style.color = textOn(d.border);
@@ -389,6 +416,18 @@ function setZoom(z){
 }
 
 /* ---------- import JSON ---------- */
+function checkImportBox(){   // enable the button only when the pasted text is valid card JSON
+  const text = $('import-item-json').value.trim();
+  let ok = false, msg = '';
+  if (text){
+    try {
+      const r = checkImport(JSON.parse(text));
+      ok = !r.error; msg = ok ? 'Valid card JSON.' : r.error;
+    } catch(e){ msg = 'Not valid JSON yet.'; }
+  }
+  $('import').disabled = !ok; $('importmsg').textContent = msg;
+}
+$('import-item-json').addEventListener('input', checkImportBox);
 const FIELD_LIMITS = {name:40, desc:160, stat:160, use:10, cost:10, etch:60};
 
 function applyShared(raw, card){   // photo, framing and corners: same rules for both kinds
@@ -468,12 +507,19 @@ $('import').addEventListener('click', () => {
 
   stash[mode] = state; state = card;                       // id is null, so the first Save creates a new card
   syncForm();                         // also re-renders the live card
-  $('import-item-json').value = '';
+  $('import-item-json').value = ''; checkImportBox();
   say('Card imported. Save it to add it to your library.');
 });
 
 /* ---------- inputs ---------- */
 function updateDrop(){ $('drop-title').textContent = state.image ? 'Drop, paste or click to replace the photo' : 'Drop, paste or click to add a photo'; }
+async function copyText(t){   // clipboard API where allowed, older copy command otherwise
+  try { await navigator.clipboard.writeText(t); return true; } catch(e){}
+  const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch(e){}
+  ta.remove(); return ok;
+}
 function loadPhoto(file){
   if (!file) return;
   if (!file.type || !file.type.startsWith('image/')){ say('That file isn’t an image.'); return; }
@@ -543,6 +589,8 @@ function syncForm(){
   mode = cu ? 'custom' : 'original';
   $('tab-orig').classList.toggle('on', !cu); $('tab-cust').classList.toggle('on', cu);
   $('orig-fields').hidden = cu; $('cust-fields').hidden = !cu; $('colors').hidden = !cu;
+  $('namelabel').textContent = cu ? 'Card name' : 'Equipment name';
+  $('name').placeholder = cu ? 'e.g. Ember Potion' : 'e.g. Dawnbreaker Longsword';
   $('name').value = state.name; $('desc').value = state.desc;
   $('dc').textContent = state.desc.length; $('zoom').value = state.zoom; $('photo').value = '';
   if (cu){
@@ -612,7 +660,7 @@ $('save').addEventListener('click', () => {
 });
 
 $('copy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(JSON.stringify(state)); say('Card JSON copied.'); }
+  try { if (!(await copyText(JSON.stringify(state)))) throw 0; say('Card JSON copied.'); }
   catch(e){ say('Copy isn’t available here.'); }
 });
 
@@ -649,7 +697,7 @@ async function cardBlob(d){
   rr(g,15,15,W-30,H-30,R(36)); g.fillStyle=face; g.fill();
   // name
   g.fillStyle=ink; g.font='bold 46px Georgia, serif';
-  const nl = wrapText(g,d.name||'Unnamed Equipment',670).slice(0,2);
+  const nl = wrapText(g,d.name||(d.kind === 'custom' ? 'Unnamed Card' : 'Unnamed Equipment'),670).slice(0,2);
   nl.forEach((l,i)=>g.fillText(l,40,45+i*52));
   const ul = 45 + nl.length*52 + 8;   // underline sits right under the name
   g.fillStyle=tc; g.fillRect(40,ul,670,5);
@@ -733,28 +781,122 @@ async function exportPng(d, msgId){
 $('png').addEventListener('click', () => exportPng(state, 'msg'));
 
 /* ---------- library: search + filter ---------- */
+// Library button icons (fixed strings, never built from card data)
+const ICONS = {
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  png:  '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/>',
+  del:  '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
+};
+function iconBtn(key, label, name, fn){
+  const b = document.createElement('button'); b.type = 'button'; b.title = label; b.setAttribute('aria-label', label + ': ' + name);
+  b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[key] + '</svg>';
+  b.onclick = fn; return b;
+}
+const picked = new Set();   // ids of selected library cards
+let shownIds = [];
+function updateSel(){
+  $('sel-count').textContent = picked.size ? picked.size + ' selected' : 'Click cards to select';
+  $('dl-sel').disabled = $('print-sel').disabled = !picked.size;
+}
+function pickedCards(){ return loadAll().filter(c => picked.has(c.id)); }
+function slugOf(c){ return (c.name || 'equipment-card').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'equipment-card'; }
+const pause = ms => new Promise(r => setTimeout(r, ms));
+
+async function downloadSelected(){
+  const cards = pickedCards(); if (!cards.length) return;
+  let dir = null;
+  if (window.showDirectoryPicker){   // Chrome, Edge, Opera: pick one folder for every file
+    try { dir = await window.showDirectoryPicker({mode:'readwrite'}); }
+    catch(e){
+      if (e && e.name === 'AbortError'){ say('Download cancelled.', 'libmsg'); return; }
+      // other errors (blocked folder, unsupported context): fall back to normal downloads
+    }
+  }
+  const used = {};
+  try {
+    for (let i = 0; i < cards.length; i++){
+      say('Saving ' + (i+1) + ' of ' + cards.length + '…', 'libmsg');
+      let name = slugOf(cards[i]); used[name] = (used[name] || 0) + 1;
+      if (used[name] > 1) name += '-' + used[name];
+      name += '.png';
+      const blob = await cardBlob(cards[i]);
+      if (dir){
+        const fh = await dir.getFileHandle(name, {create:true});
+        const w = await fh.createWritable(); await w.write(blob); await w.close();
+      } else {
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        await pause(300);   // give the browser room between downloads
+      }
+    }
+    say(cards.length + ' PNG' + (cards.length === 1 ? '' : 's') + (dir ? ' saved to the folder you chose.' : ' downloaded. If some are missing, allow multiple downloads for this site.'), 'libmsg');
+  } catch(e){ say('Couldn’t save every card. Try a different folder.', 'libmsg'); }
+}
+
+// Print: cards are drawn with the same code as the PNG export, at 2.5 x 3.5 in, nine per portrait page.
+async function printSelected(){
+  const cards = pickedCards(); if (!cards.length) return;
+  say('Preparing ' + cards.length + ' card' + (cards.length === 1 ? '' : 's') + '…', 'libmsg');
+  const area = $('printarea'); area.replaceChildren();
+  const imgs = [];
+  try {
+    for (let i = 0; i < cards.length; i += 9){
+      const sheet = document.createElement('div'); sheet.className = 'sheet';
+      for (const c of cards.slice(i, i + 9)){
+        const img = new Image(); img.alt = c.name || '';
+        img.src = URL.createObjectURL(await cardBlob(c));
+        sheet.appendChild(img); imgs.push(img);
+      }
+      area.appendChild(sheet);
+    }
+    await Promise.all(imgs.map(im => im.decode().catch(() => {})));
+    say('', 'libmsg');
+    window.print();
+  } catch(e){ say('Couldn’t prepare the print layout.', 'libmsg'); }
+}
+window.addEventListener('afterprint', () => {
+  const area = $('printarea'); area.querySelectorAll('img').forEach(i => URL.revokeObjectURL(i.src)); area.replaceChildren();
+});
+$('sel-all').addEventListener('click', () => { shownIds.forEach(id => picked.add(id)); renderLib(); });
+$('sel-none').addEventListener('click', () => { picked.clear(); renderLib(); });
+$('dl-sel').addEventListener('click', downloadSelected);
+$('print-sel').addEventListener('click', printSelected);
+
 function renderLib(){
   const q = $('q').value.trim().toLowerCase(), t = $('ft').value;
   const hits = loadAll().filter(c =>
     (!t || (t === 'Custom' ? c.kind === 'custom' : c.kind !== 'custom' && c.type === t)) &&
     (!q || searchText(c).includes(q)));
   const lib = $('lib'); lib.replaceChildren();
+  shownIds = hits.map(c => c.id); updateSel();
   if (!hits.length){
     const p = document.createElement('p'); p.className = 'empty';
     p.textContent = loadAll().length ? 'No cards match your search.' : 'No saved cards yet.';
     lib.appendChild(p); return;
   }
   hits.forEach(c => {
-    const item = document.createElement('div'); item.className = 'item';
-    item.appendChild(buildCard(c, false));
+    const item = document.createElement('div'); item.className = 'item' + (picked.has(c.id) ? ' sel' : '');
+    const cardEl = buildCard(c, false);
+    cardEl.classList.add('pickable'); cardEl.tabIndex = 0;
+    cardEl.setAttribute('role', 'checkbox'); cardEl.setAttribute('aria-label', 'Select ' + (c.name || 'card'));
+    cardEl.setAttribute('aria-checked', picked.has(c.id));
+    const toggle = () => {
+      if (picked.has(c.id)) picked.delete(c.id); else picked.add(c.id);
+      const on = picked.has(c.id);
+      item.classList.toggle('sel', on); cardEl.setAttribute('aria-checked', on); updateSel();
+    };
+    cardEl.addEventListener('click', toggle);
+    cardEl.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); toggle(); } });
+    item.appendChild(cardEl);
     const row = document.createElement('div'); row.className = 'row';
-    const ed = document.createElement('button'); ed.textContent = 'Edit';
-    ed.onclick = () => { openCard(c); say('Editing “' + c.name + '”.'); window.scrollTo({top:0, behavior:'smooth'}); };
-    const del = document.createElement('button'); del.textContent = 'Delete';
-    del.onclick = () => { saveAll(loadAll().filter(x => x.id !== c.id)); renderLib(); };
-    const pg = document.createElement('button'); pg.textContent = 'PNG';
-    pg.onclick = () => exportPng(c, 'libmsg');
-    row.append(ed, pg, del); item.appendChild(row); lib.appendChild(item); fitDesc(item); applyCrops(item);
+    const nm = c.name || 'card';
+    row.append(
+      iconBtn('edit', 'Edit', nm, () => { openCard(c); say('Editing “' + nm + '”.'); window.scrollTo({top:0, behavior:'smooth'}); }),
+      iconBtn('copy', 'Copy JSON', nm, async () => say((await copyText(JSON.stringify(c))) ? 'Copied the JSON for “' + nm + '”.' : 'Copy isn’t available here.', 'libmsg')),
+      iconBtn('png', 'Export PNG', nm, () => exportPng(c, 'libmsg')),
+      iconBtn('del', 'Delete', nm, () => { saveAll(loadAll().filter(x => x.id !== c.id)); picked.delete(c.id); renderLib(); })); item.appendChild(row); lib.appendChild(item); fitDesc(item); applyCrops(item);
   });
 }
 $('q').addEventListener('input', renderLib);
