@@ -66,6 +66,15 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .fbox .row{margin-top:8px}.fbox button{padding:2px 10px}
 input[type=color]{width:100%;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
 [hidden]{display:none!important}
+.optrow{display:flex;align-items:center;gap:6px;margin-top:8px}
+.optrow label{margin:0;white-space:nowrap}
+.optrow input[type=range]{flex:1;min-width:0}
+.sq{width:32px;height:32px;padding:0;display:grid;place-items:center;border-radius:6px;flex:none}
+.sq.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.c-desc.hmid{text-align:center}
+.c-desc.vmid{display:flex;flex-direction:column}
+.c-desc.vmid > :first-child{margin-top:auto}
+.c-desc.vmid > :last-child{margin-bottom:auto}
 button:disabled{opacity:.45;cursor:not-allowed}
 .tools{display:flex;align-items:center;gap:4px;margin:6px 0}
 .tools .zi{flex:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--muted);opacity:.55;cursor:default;user-select:none;margin-right:2px}
@@ -97,7 +106,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 }
 @media(pointer:coarse){   /* touch screens: bigger tap targets */
   button{min-height:44px}
-  .tools button,.tools .zi{width:44px;height:44px}
+  .tools button,.tools .zi,.sq{width:44px;height:44px}
   .fbox button{min-height:40px}
   .item button{min-height:0;max-width:44px}   /* bigger squares on touch, still square */
   input[type=color]{height:40px}
@@ -159,6 +168,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
         <label for="desc">Description</label>
         <textarea id="desc" maxlength="160" placeholder="A blade that glows at first light."></textarea>
         <div class="count"><span id="dc">0</span>/160</div>
+        <div id="desc-opts" class="optrow" hidden>
+          <button id="dh" type="button" class="sq" title="Center text horizontally" aria-label="Center description horizontally" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M5 18h14"/></svg></button>
+          <button id="dv" type="button" class="sq" title="Center text vertically" aria-label="Center description vertically" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="9" width="10" height="6" rx="1"/><path d="M12 3v3M12 18v3"/></svg></button>
+          <label for="dsize">Text size</label>
+          <input id="dsize" type="range" min="0.6" max="1.6" step="0.05" value="1">
+        </div>
         <div class="row">
           <button id="reset" type="button">Reset photo</button>
           <button id="save" type="button" class="primary">Save card</button>
@@ -218,7 +233,7 @@ const stash = {original:null, custom:null};   // unsaved work kept per tab
 const MAX_FIELDS = 8;
 const ZOOM_MIN = 0.5, ZOOM_MAX = 10;   // photo zoom limits: change these two numbers
 $('zoom').min = ZOOM_MIN; $('zoom').max = ZOOM_MAX;
-function blankCustom(){ return {kind:'custom',id:null,name:'',typeName:'',desc:'',fields:[],image:'',zoom:1,x:0,y:0,cropT:0,cropR:0,cropB:0,cropL:0,corners:'rounded',border:'#5b6b7a',bg:'#fbf6e8'}; }
+function blankCustom(){ return {kind:'custom',id:null,name:'',typeName:'',desc:'',fields:[],image:'',zoom:1,x:0,y:0,cropT:0,cropR:0,cropB:0,cropL:0,descH:false,descV:false,descSize:1,corners:'rounded',border:'#5b6b7a',bg:'#fbf6e8'}; }
 function textOn(hex){   // readable text color for a background
   const n = parseInt(String(hex).slice(1), 16) || 0, r = n>>16&255, g = n>>8&255, b = n&255;
   return (0.299*r + 0.587*g + 0.114*b) > 150 ? '#2a2118' : '#f5efe0';
@@ -314,8 +329,8 @@ function buildCropBox(frame){   // dashed box with 8 drag handles; edits the cro
 }
 function fitDesc(root){
   root.querySelectorAll('.c-desc').forEach(el => {
-    let k = 1; el.style.fontSize = '';
-    while (el.scrollHeight > el.clientHeight + 1 && k > 0.5){ k -= 0.05; el.style.fontSize = (0.8*k) + 'em'; }
+    const base = 0.8 * Number(el.dataset.size || 1); let k = 1; el.style.fontSize = base + 'em';
+    while (el.scrollHeight > el.clientHeight + 1 && k > 0.5){ k -= 0.05; el.style.fontSize = (base*k) + 'em'; }
   });
 }
 
@@ -355,7 +370,9 @@ function buildCard(d, editable){
   }
   const ty = document.createElement('div'); ty.className = 'c-type'; ty.textContent = d.kind === 'custom' ? (d.typeName || 'Custom') : d.type;
   if (d.kind === 'custom') ty.style.color = textOn(d.border);
-  const ds = document.createElement('div'); ds.className = 'c-desc';
+  const ds = document.createElement('div');
+  ds.className = 'c-desc' + (d.descH ? ' hmid' : '') + (d.descV ? ' vmid' : '');
+  ds.dataset.size = d.descSize || 1;
   const ls = lineList(d), txt = (d.desc || '').trim();
   ls.forEach(t => { const r = document.createElement('div'); r.textContent = t; ds.appendChild(r); });
   if (txt || !ls.length){ const p = document.createElement('div'); p.className = 'c-text'; p.textContent = txt || 'Description goes here.'; ds.appendChild(p); }
@@ -457,6 +474,8 @@ function checkCustom(raw){
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) ? v : null;
   card.name = txt(raw.name, 40); card.typeName = txt(raw.typeName, 24); card.desc = txt(raw.desc, 160);
   card.border = hex(raw.border) || card.border; card.bg = hex(raw.bg) || card.bg;
+  card.descH = raw.descH === true; card.descV = raw.descV === true;
+  card.descSize = (typeof raw.descSize === 'number' && Number.isFinite(raw.descSize)) ? Math.min(1.6, Math.max(0.6, raw.descSize)) : 1;
   if (raw.fields !== undefined && !Array.isArray(raw.fields)) return {error: '"fields" must be a list.'};
   for (const f of (raw.fields || []).slice(0, MAX_FIELDS)){
     if (!f || typeof f !== 'object') return {error: 'Each field must be an object.'};
@@ -578,6 +597,15 @@ function setTool(t){
 }
 $('tool-move').addEventListener('click', () => setTool('move'));
 $('tool-crop').addEventListener('click', () => setTool('crop'));
+function syncDescOpts(){
+  $('desc-opts').hidden = state.kind !== 'custom';
+  [['dh', 'descH'], ['dv', 'descV']].forEach(([id, k]) => {
+    $(id).classList.toggle('on', !!state[k]); $(id).setAttribute('aria-pressed', !!state[k]);
+  });
+  $('dsize').value = state.descSize || 1;
+}
+[['dh', 'descH'], ['dv', 'descV']].forEach(([id, k]) => $(id).addEventListener('click', () => { state[k] = !state[k]; syncDescOpts(); renderLive(); }));
+$('dsize').addEventListener('input', e => { state.descSize = parseFloat(e.target.value); renderLive(); });
 function updateCornersBtn(){ $('corners').textContent = 'Corners: ' + (state.corners === 'sharp' ? 'Sharp' : 'Rounded'); }
 $('corners').addEventListener('click', () => {
   state.corners = state.corners === 'sharp' ? 'rounded' : 'sharp';
@@ -600,7 +628,7 @@ function syncForm(){
     ['stat','range','use','cost','etch'].forEach(k => { $(k).value = state[k] || ''; });
     $('statlabel').textContent = STAT_LABEL[state.type];
   }
-  updateCornersBtn(); updateDrop();
+  updateCornersBtn(); updateDrop(); syncDescOpts();
   renderLive();
 }
 function mk(tag, props, evt, fn){ const e = document.createElement(tag); Object.assign(e, props); if (evt) e.addEventListener(evt, fn); return e; }
@@ -728,18 +756,22 @@ async function cardBlob(d){
   const items = lineList(d).map(t=>({t, f:''}));
   if ((d.desc||'').trim()) items.push({t:d.desc.trim(), f:'italic '});
   if (!items.length) items.push({t:'Description goes here.', f:'italic '});
-  let laid = [];
-  for (let size=32; size>=14; size-=2){
+  let laid = [], used = 0;
+  for (let size=Math.max(14, Math.round(32*(d.descSize||1))); size>=14; size-=2){
     laid = []; let y = 0;
     items.forEach((it,k)=>{
       g.font = it.f + size + 'px Georgia, serif';
       if (it.f && k>0) y += 8;
       wrapText(g,it.t,630).forEach(l=>{ laid.push({l, f:g.font, y}); y += Math.round(size*1.35); });
     });
+    used = y;
     if (y <= bh-40) break;
   }
   g.fillStyle=ink;
-  laid.forEach(o=>{ g.font=o.f; g.fillText(o.l,60,by+20+o.y); });
+  const top = by + 20 + (d.descV ? Math.max(0, (bh-40-used)/2) : 0);
+  g.textAlign = d.descH ? 'center' : 'left';
+  laid.forEach(o=>{ g.font=o.f; g.fillText(o.l, d.descH ? 375 : 60, top+o.y); });
+  g.textAlign = 'left';
   return new Promise(r=>cv.toBlob(r,'image/png'));
 }
 
