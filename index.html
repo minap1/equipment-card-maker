@@ -91,7 +91,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .libbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
 .libbar .count{margin:0 0 0 auto;text-align:right}
 .item{position:relative}
-.pickable{cursor:pointer;user-select:none;-webkit-user-select:none}
+.pickable{position:relative;cursor:pointer;user-select:none;-webkit-user-select:none}
+.item.sel .pickable::after{content:"";position:absolute;inset:0;pointer-events:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-opacity='.9' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center/50% no-repeat,rgba(0,0,0,.3)}   /* translucent cross: click again to deselect */
+.qty{align-items:center;justify-content:center}
+.qty-n{flex:none;min-width:34px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
 .pickable:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .item.sel .card{outline:4px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 9px rgba(138,90,28,.22)}
 #printarea{display:none}
@@ -822,6 +825,8 @@ const ICONS = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   png:  '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  plus:  '<path d="M12 5v14M5 12h14"/>',
   del:  '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
 };
 function iconBtn(key, label, name, fn){
@@ -829,10 +834,12 @@ function iconBtn(key, label, name, fn){
   b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[key] + '</svg>';
   b.onclick = fn; return b;
 }
-const picked = new Set();   // ids of selected library cards
+const picked = new Map();   // selected library cards: id -> number of copies to print
+const MAX_COPIES = 99;
 let shownIds = [];
 function updateSel(){
-  $('sel-count').textContent = picked.size ? picked.size + ' selected' : 'Click cards to select';
+  let copies = 0; picked.forEach(n => copies += n);
+  $('sel-count').textContent = picked.size ? picked.size + ' selected' + (copies !== picked.size ? ' · ' + copies + ' copies' : '') : 'Click cards to select';
   $('dl-sel').disabled = $('print-sel').disabled = !picked.size;
 }
 function pickedCards(){ return loadAll().filter(c => picked.has(c.id)); }
@@ -874,15 +881,16 @@ async function downloadSelected(){
 // Print: cards are drawn with the same code as the PNG export, at 2.5 x 3.5 in, nine per portrait page.
 async function printSelected(){
   const cards = pickedCards(); if (!cards.length) return;
-  say('Preparing ' + cards.length + ' card' + (cards.length === 1 ? '' : 's') + '…', 'libmsg');
+  const list = cards.flatMap(c => Array(picked.get(c.id) || 1).fill(c));   // each card repeated by its count
+  say('Preparing ' + list.length + ' card' + (list.length === 1 ? '' : 's') + '…', 'libmsg');
   const area = $('printarea'); area.replaceChildren();
-  const imgs = [];
+  const imgs = [], urls = new Map();   // draw each card once, reuse the image for its copies
   try {
-    for (let i = 0; i < cards.length; i += 9){
+    for (let i = 0; i < list.length; i += 9){
       const sheet = document.createElement('div'); sheet.className = 'sheet';
-      for (const c of cards.slice(i, i + 9)){
-        const img = new Image(); img.alt = c.name || '';
-        img.src = URL.createObjectURL(await cardBlob(c));
+      for (const c of list.slice(i, i + 9)){
+        if (!urls.has(c.id)) urls.set(c.id, URL.createObjectURL(await cardBlob(c)));
+        const img = new Image(); img.alt = c.name || ''; img.src = urls.get(c.id);
         sheet.appendChild(img); imgs.push(img);
       }
       area.appendChild(sheet);
@@ -895,7 +903,7 @@ async function printSelected(){
 window.addEventListener('afterprint', () => {
   const area = $('printarea'); area.querySelectorAll('img').forEach(i => URL.revokeObjectURL(i.src)); area.replaceChildren();
 });
-$('sel-all').addEventListener('click', () => { shownIds.forEach(id => picked.add(id)); renderLib(); });
+$('sel-all').addEventListener('click', () => { shownIds.forEach(id => { if (!picked.has(id)) picked.set(id, 1); }); renderLib(); });
 $('sel-none').addEventListener('click', () => { picked.clear(); renderLib(); });
 $('dl-sel').addEventListener('click', downloadSelected);
 $('print-sel').addEventListener('click', printSelected);
@@ -913,26 +921,39 @@ function renderLib(){
     lib.appendChild(p); return;
   }
   hits.forEach(c => {
-    const item = document.createElement('div'); item.className = 'item' + (picked.has(c.id) ? ' sel' : '');
+    const nm = c.name || 'card';
+    const item = document.createElement('div'); item.className = 'item';
     const cardEl = buildCard(c, false);
     cardEl.classList.add('pickable'); cardEl.tabIndex = 0;
-    cardEl.setAttribute('role', 'checkbox'); cardEl.setAttribute('aria-label', 'Select ' + (c.name || 'card'));
-    cardEl.setAttribute('aria-checked', picked.has(c.id));
-    const toggle = () => {
-      if (picked.has(c.id)) picked.delete(c.id); else picked.add(c.id);
-      const on = picked.has(c.id);
-      item.classList.toggle('sel', on); cardEl.setAttribute('aria-checked', on); updateSel();
-    };
-    cardEl.addEventListener('click', toggle);
-    cardEl.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); toggle(); } });
+    cardEl.setAttribute('role', 'checkbox'); cardEl.setAttribute('aria-label', 'Select ' + nm);
     item.appendChild(cardEl);
-    const row = document.createElement('div'); row.className = 'row';
-    const nm = c.name || 'card';
+
+    const row = document.createElement('div'); row.className = 'row';   // shown while not selected
     row.append(
       iconBtn('edit', 'Edit', nm, () => { openCard(c); say('Editing “' + nm + '”.'); window.scrollTo({top:0, behavior:'smooth'}); }),
       iconBtn('copy', 'Copy JSON', nm, async () => say((await copyText(JSON.stringify(c))) ? 'Copied the JSON for “' + nm + '”.' : 'Copy isn’t available here.', 'libmsg')),
       iconBtn('png', 'Export PNG', nm, () => exportPng(c, 'libmsg')),
-      iconBtn('del', 'Delete', nm, () => { saveAll(loadAll().filter(x => x.id !== c.id)); picked.delete(c.id); renderLib(); })); item.appendChild(row); lib.appendChild(item); fitDesc(item); applyCrops(item);
+      iconBtn('del', 'Delete', nm, () => { saveAll(loadAll().filter(x => x.id !== c.id)); picked.delete(c.id); renderLib(); }));
+
+    const qty = document.createElement('div'); qty.className = 'row qty';   // shown while selected: - count +
+    const num = document.createElement('span'); num.className = 'qty-n'; num.setAttribute('aria-live', 'polite');
+    const minus = iconBtn('minus', 'Fewer copies', nm, () => setCopies(-1));
+    const plus = iconBtn('plus', 'More copies', nm, () => setCopies(1));
+    qty.append(minus, num, plus);
+
+    const show = () => {
+      const on = picked.has(c.id), n = picked.get(c.id) || 1;
+      item.classList.toggle('sel', on); cardEl.setAttribute('aria-checked', on);
+      row.hidden = on; qty.hidden = !on;
+      num.textContent = n; num.setAttribute('aria-label', n + (n === 1 ? ' copy' : ' copies'));
+      minus.disabled = n <= 1; plus.disabled = n >= MAX_COPIES;
+    };
+    const setCopies = d => { picked.set(c.id, Math.min(MAX_COPIES, Math.max(1, (picked.get(c.id) || 1) + d))); show(); updateSel(); };
+    const toggle = () => { if (picked.has(c.id)) picked.delete(c.id); else picked.set(c.id, 1); show(); updateSel(); };   // deselecting resets the count
+    cardEl.addEventListener('click', toggle);
+    cardEl.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); toggle(); } });
+    show();
+    item.append(row, qty); lib.appendChild(item); fitDesc(item); applyCrops(item);
   });
 }
 $('q').addEventListener('input', renderLib);
